@@ -1,85 +1,126 @@
 ---
 name: driftwatch
-description: [TODO: Complete and informative explanation of what the skill does and when to use it. Include WHEN to use this skill - specific scenarios, file types, or tasks that trigger it.]
+description: >
+  Scan your OpenClaw workspace for config health issues — truncation risks,
+  compaction survival problems, workspace hygiene, and missing config fields.
+  Use when the operator asks to "scan my config", "check my bootstrap files",
+  "analyze my workspace", "check for truncation", "is my config healthy",
+  or any question about OpenClaw configuration health and bootstrap file status.
+metadata:
+  openclaw:
+    requires:
+      bins:
+        - python3
+    emoji: "🔍"
+    homepage: https://bubbuilds.com
 ---
 
-# Driftwatch
+# Driftwatch — Config Health Scanner
 
-## Overview
+## Running a Scan
 
-[TODO: 1-2 sentences explaining what this skill enables]
+```bash
+python3 {baseDir}/scripts/scan.py --workspace <workspace_path>
+```
 
-## Structuring This Skill
+The `--workspace` argument defaults to the agent's own workspace (checks `OPENCLAW_WORKSPACE` env var, then falls back to `~/.openclaw/workspace/`). Most of the time you can omit it:
 
-[TODO: Choose the structure that best fits this skill's purpose. Common patterns:
+```bash
+python3 {baseDir}/scripts/scan.py
+```
 
-**1. Workflow-Based** (best for sequential processes)
-- Works well when there are clear step-by-step procedures
-- Example: DOCX skill with "Workflow Decision Tree" -> "Reading" -> "Creating" -> "Editing"
-- Structure: ## Overview -> ## Workflow Decision Tree -> ## Step 1 -> ## Step 2...
+The scanner outputs JSON to stdout. Parse it, then present findings conversationally — never dump raw JSON at the operator.
 
-**2. Task-Based** (best for tool collections)
-- Works well when the skill offers different operations/capabilities
-- Example: PDF skill with "Quick Start" -> "Merge PDFs" -> "Split PDFs" -> "Extract Text"
-- Structure: ## Overview -> ## Quick Start -> ## Task Category 1 -> ## Task Category 2...
+## What the Scanner Checks
 
-**3. Reference/Guidelines** (best for standards or specifications)
-- Works well for brand guidelines, coding standards, or requirements
-- Example: Brand styling with "Brand Guidelines" -> "Colors" -> "Typography" -> "Features"
-- Structure: ## Overview -> ## Guidelines -> ## Specifications -> ## Usage...
+Four modules run in sequence. Each contributes its own section to the output JSON:
 
-**4. Capabilities-Based** (best for integrated systems)
-- Works well when the skill provides multiple interrelated features
-- Example: Product Management with "Core Capabilities" -> numbered capability list
-- Structure: ## Overview -> ## Core Capabilities -> ### 1. Feature -> ### 2. Feature...
+**truncation** — Measures every bootstrap file's character count against the 20,000-char per-file limit and the 150,000-char aggregate budget. Tracks sequential budget consumption so you can see when MEMORY.md (last in the injection order) is getting starved.
 
-Patterns can be mixed and matched as needed. Most skills combine patterns (e.g., start with task-based, add workflow for complex operations).
+**compaction** — Parses AGENTS.md for the two sections that survive context compaction: `## Session Startup` and `## Red Lines`. Reports what percentage of the file lives outside those sections and will vanish after compaction.
 
-Delete this entire "Structuring This Skill" section when done - it's just guidance.]
+**hygiene** — Checks for duplicate memory files (MEMORY.md and memory.md coexisting), empty bootstrap files, missing subagent-required files, and stray markdown files that the operator may think are being loaded but aren't.
 
-## [TODO: Replace with the first main section based on chosen structure]
+**config** — Confirms openclaw.json exists, is parseable, and has expected top-level fields present. Shallow check only — never reads or reports field values.
 
-[TODO: Add content here. See examples in existing skills:
-- Code samples for technical skills
-- Decision trees for complex workflows
-- Concrete examples with realistic user requests
-- References to scripts/templates/references as needed]
+## Severity Levels
 
-## Resources (optional)
+- **critical** — address immediately. Something is broken or will break. Examples: a compaction-surviving section is missing, aggregate char budget exceeded.
+- **warning** — review soon. Not broken yet, but trending bad. Examples: AGENTS.md is 87% of its limit, a surviving section is near its 3,000-char cap.
+- **info** — awareness only. Nothing's wrong, just worth knowing. Examples: IDENTITY.md is empty, a non-bootstrap markdown file exists in the workspace root.
 
-Create only the resource directories this skill actually needs. Delete this section if no resources are required.
+## Presenting Findings
 
-### scripts/
-Executable code (Python/Bash/etc.) that can be run directly to perform specific operations.
+Lead with critical findings. If there are none, say so up front — that's the good news. Then work through warnings and info grouped by module.
 
-**Examples from other skills:**
-- PDF skill: `fill_fillable_fields.py`, `extract_form_field_info.py` - utilities for PDF manipulation
-- DOCX skill: `document.py`, `utilities.py` - Python modules for document processing
+Translate the numbers into what they mean. Don't say "char_count: 18500, limit: 20000, percent_of_limit: 92.5". Say: "AGENTS.md is at 18,500 characters — 92% of its 20,000-char limit. If you add much more, the tail of the file will start getting cut off."
 
-**Appropriate for:** Python scripts, shell scripts, or any executable code that performs automation, data processing, or specific operations.
+Keep it brief. One or two sentences per finding. Operators don't need a lecture, they need to know what to do.
 
-**Note:** Scripts may be executed without loading into context, but can still be read by Codex for patching or environment adjustments.
-
-### references/
-Documentation and reference material intended to be loaded into context to inform Codex's process and thinking.
-
-**Examples from other skills:**
-- Product management: `communication.md`, `context_building.md` - detailed workflow guides
-- BigQuery: API reference documentation and query examples
-- Finance: Schema documentation, company policies
-
-**Appropriate for:** In-depth documentation, API references, database schemas, comprehensive guides, or any detailed information that Codex should reference while working.
-
-### assets/
-Files not intended to be loaded into context, but rather used within the output Codex produces.
-
-**Examples from other skills:**
-- Brand styling: PowerPoint template files (.pptx), logo files
-- Frontend builder: HTML/React boilerplate project directories
-- Typography: Font files (.ttf, .woff2)
-
-**Appropriate for:** Templates, boilerplate code, document templates, images, icons, fonts, or any files meant to be copied or used in the final output.
+**What not to do:** Don't modify any files. Don't attempt to auto-fix anything. Present findings and let the operator decide what to change.
 
 ---
 
-**Not every skill requires all three types of resources.**
+## Sample Output Interpretation
+
+Here's what a healthy workspace looks like in the JSON, and how to present it:
+
+```json
+{
+  "summary": { "critical": 0, "warning": 1, "info": 2 },
+  "truncation": {
+    "files": [
+      {
+        "file": "AGENTS.md",
+        "char_count": 9200,
+        "limit": 20000,
+        "percent_of_limit": 46.0,
+        "status": "ok"
+      }
+    ],
+    "aggregate": {
+      "total_chars": 54000,
+      "aggregate_limit": 150000,
+      "percent_of_aggregate": 36.0,
+      "aggregate_status": "ok"
+    }
+  },
+  "compaction": {
+    "surviving_sections": [
+      { "heading": "Session Startup", "found": true, "char_count": 1200, "status": "ok" },
+      { "heading": "Red Lines", "found": true, "char_count": 800, "status": "ok" }
+    ],
+    "survival_ratio": 0.22
+  },
+  "hygiene": {
+    "findings": [
+      { "severity": "warning", "check": "empty_bootstrap", "message": "IDENTITY.md exists but is empty" }
+    ]
+  },
+  "config": {
+    "config_found": true,
+    "parseable": true,
+    "findings": [{ "severity": "info", "message": "openclaw.json found and parseable. 5 of 6 checked fields present." }]
+  }
+}
+```
+
+**How to present this to the operator:**
+
+> Config looks healthy overall — no critical issues.
+>
+> One thing to note: IDENTITY.md exists but is empty. It's taking up a bootstrap slot without contributing any instructions. Worth either filling it in or removing it.
+>
+> Your bootstrap files are using about 54,000 of your 150,000-character aggregate budget (36%) — plenty of room. AGENTS.md is at 46% of its individual limit, well clear of truncation territory.
+>
+> Both compaction-critical sections are present in AGENTS.md (Session Startup and Red Lines). About 22% of the file's content will survive a compaction event — that's normal.
+
+That's the tone. Factual, brief, actionable.
+
+---
+
+## Notes
+
+- Character counts, not token counts. OpenClaw enforces char-based limits. The scanner reflects that exactly.
+- Findings are stamped with the OpenClaw version tag they were calibrated against (currently `2026.03`). If you're on a different version, limits may differ.
+- The scanner makes zero network calls. Everything runs locally against your workspace files.
