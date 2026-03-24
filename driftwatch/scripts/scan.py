@@ -1,6 +1,6 @@
 """
 Driftwatch — Main Entry Point
-Runs all 4 analysis modules and aggregates into a single JSON report.
+Runs all 3 analysis modules and aggregates into a single JSON report.
 
 Usage:
     python3 scripts/scan.py [--workspace /path/to/workspace]
@@ -55,15 +55,14 @@ def _count_severities_findings(result):
     return counts
 
 
-def _build_summary(truncation, compaction, hygiene, config):
+def _build_summary(truncation, compaction, hygiene):
     tc = _count_severities_truncation(truncation)
     cc = _count_severities_findings(compaction)
     hc = _count_severities_findings(hygiene)
-    fc = _count_severities_findings(config)
 
-    critical = tc["critical"] + cc["critical"] + hc["critical"] + fc["critical"]
-    warning  = tc["warning"]  + cc["warning"]  + hc["warning"]  + fc["warning"]
-    info     = tc["info"]     + cc["info"]      + hc["info"]     + fc["info"]
+    critical = tc["critical"] + cc["critical"] + hc["critical"]
+    warning  = tc["warning"]  + cc["warning"]  + hc["warning"]
+    info     = tc["info"]     + cc["info"]      + hc["info"]
 
     return {
         "critical": critical,
@@ -87,9 +86,9 @@ def main():
     parser = argparse.ArgumentParser(
         prog="scan.py",
         description=(
-            "Driftwatch — OpenClaw config health scanner.\n"
-            "Checks bootstrap truncation, compaction survival, workspace hygiene,\n"
-            "and config completeness. Outputs a JSON report to stdout.\n\n"
+            "Driftwatch — OpenClaw workspace health scanner.\n"
+            "Checks bootstrap truncation, compaction anchor health, and workspace hygiene.\n"
+            "Outputs a JSON report to stdout.\n\n"
             "Workspace resolution order:\n"
             "  1. --workspace flag\n"
             "  2. OPENCLAW_WORKSPACE environment variable\n"
@@ -121,16 +120,11 @@ def main():
         from scripts.hygiene import analyze_hygiene
         return analyze_hygiene(wp)
 
-    def load_config(wp):
-        from scripts.config_check import analyze_config
-        return analyze_config(wp)
-
     truncation = _run_module(load_truncation, workspace_path)
     compaction = _run_module(load_compaction, workspace_path)
     hygiene    = _run_module(load_hygiene,    workspace_path)
-    config     = _run_module(load_config,     workspace_path)
 
-    summary = _build_summary(truncation, compaction, hygiene, config)
+    summary = _build_summary(truncation, compaction, hygiene)
 
     report = {
         "driftwatch_version": DRIFTWATCH_VERSION,
@@ -141,7 +135,6 @@ def main():
         "truncation": truncation,
         "compaction": compaction,
         "hygiene": hygiene,
-        "config": config,
         "web_dashboard_note": (
             "For visual truncation maps and drift tracking over time, visit bubbuilds.com"
         ),

@@ -1,11 +1,11 @@
 ---
 name: driftwatch
 description: >
-  Scan your OpenClaw workspace for config health issues — truncation risks,
-  compaction survival problems, workspace hygiene, and missing config fields.
+  Scan your OpenClaw workspace for health issues — truncation risks,
+  compaction anchor health, and workspace hygiene.
   Use when the operator asks to "scan my config", "check my bootstrap files",
-  "analyze my workspace", "check for truncation", "is my config healthy",
-  or any question about OpenClaw configuration health and bootstrap file status.
+  "analyze my workspace", "check for truncation", "is my workspace healthy",
+  or any question about OpenClaw workspace health and bootstrap file status.
 metadata:
   openclaw:
     requires:
@@ -15,7 +15,7 @@ metadata:
     homepage: https://bubbuilds.com
 ---
 
-# Driftwatch — Config Health Scanner
+# Driftwatch — Workspace Health Scanner
 
 ## Running a Scan
 
@@ -33,15 +33,13 @@ The scanner outputs JSON to stdout. Parse it, then present findings conversation
 
 ## What the Scanner Checks
 
-Four modules run in sequence. Each contributes its own section to the output JSON:
+Three modules run in sequence. Each contributes its own section to the output JSON:
 
 **truncation** — Measures every bootstrap file's character count against the 20,000-char per-file limit and the 150,000-char aggregate budget. Tracks sequential budget consumption so you can see when MEMORY.md (last in the injection order) is getting starved.
 
 **compaction** — Checks whether AGENTS.md contains the two anchor sections referenced by post-compaction recovery protocols: `## Session Startup` and `## Red Lines`. Verifies each is present and within the 3,000-char cap. Note: AGENTS.md itself is a bootstrap file re-injected every turn — it's not subject to compaction. These sections matter because recovery logic references them when conversation context gets thin.
 
 **hygiene** — Checks for duplicate memory files (MEMORY.md and memory.md coexisting), empty bootstrap files, missing subagent-required files, and stray markdown files that the operator may think are being loaded but aren't.
-
-**config** — Confirms openclaw.json exists, is parseable, and has expected top-level fields present. Shallow check only — never reads or reports field values.
 
 ## Severity Levels
 
@@ -95,18 +93,13 @@ Here's what a healthy workspace looks like in the JSON, and how to present it:
     "findings": [
       { "severity": "warning", "check": "empty_bootstrap", "message": "IDENTITY.md exists but is empty" }
     ]
-  },
-  "config": {
-    "config_found": true,
-    "parseable": true,
-    "findings": [{ "severity": "info", "message": "openclaw.json found and parseable. 5 of 6 checked fields present." }]
   }
 }
 ```
 
 **How to present this to the operator:**
 
-> Config looks healthy overall — no critical issues.
+> Workspace looks healthy overall — no critical issues.
 >
 > One thing to note: IDENTITY.md exists but is empty. It's taking up a bootstrap slot without contributing any instructions. Worth either filling it in or removing it.
 >

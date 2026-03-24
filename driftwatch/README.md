@@ -12,11 +12,9 @@ Driftwatch is an OpenClaw skill that checks your workspace for these problems be
 
 **Truncation** — Per-file and aggregate character counts against OpenClaw's bootstrap limits. Flags files where content is being cut off.
 
-**Compaction survival** — Checks which sections of AGENTS.md survive context compaction and which disappear. If your red lines aren't in the right section headings, they vanish silently.
+**Compaction anchor health** — Checks whether AGENTS.md contains the two sections referenced by post-compaction recovery protocols (`## Session Startup` and `## Red Lines`). Verifies each is present and within the 3,000-char cap.
 
 **Hygiene** — Duplicate memory files, empty bootstrap slots, files you think are being loaded but aren't, and missing subagent files.
-
-**Config** — Confirms openclaw.json exists, parses correctly, and has expected fields present.
 
 ---
 
@@ -72,7 +70,7 @@ The scanner returns structured JSON. Here's the shape (abbreviated):
     "aggregate_status": "ok"
   },
   "compaction": {
-    "surviving_sections": [
+    "anchor_sections": [
       { "heading": "Session Startup", "found": true, "status": "ok" },
       { "heading": "Red Lines", "found": false, "status": "critical" }
     ]
@@ -80,7 +78,7 @@ The scanner returns structured JSON. Here's the shape (abbreviated):
 }
 ```
 
-Your agent translates this into plain language. You don't read JSON — you read: "Your AGENTS.md is at 92% of its limit, and your Red Lines section is missing entirely, which means none of those rules survive compaction."
+Your agent translates this into plain language. You don't read JSON — you read: "Your AGENTS.md is at 92% of its limit, and your Red Lines anchor section is missing entirely, which means post-compaction recovery protocols can't reference it."
 
 ---
 
@@ -102,7 +100,7 @@ That command should return nothing. If it returns anything, don't install.
 
 | File | Why |
 |------|-----|
-| `AGENTS.md` | Checks truncation risk and compaction survival |
+| `AGENTS.md` | Checks truncation risk and anchor section health |
 | `SOUL.md` | Checks truncation risk |
 | `TOOLS.md` | Checks truncation risk |
 | `IDENTITY.md` | Checks truncation risk |
@@ -110,9 +108,8 @@ That command should return nothing. If it returns anything, don't install.
 | `HEARTBEAT.md` | Checks truncation risk |
 | `BOOTSTRAP.md` | Checks truncation risk |
 | `MEMORY.md` | Checks truncation risk and duplicate detection |
-| `~/.openclaw/openclaw.json` | Confirms config exists and expected fields are present — **never reads or outputs API key values** |
 
-That's it. File sizes and existence, heading structure in AGENTS.md, and config field presence. No content from your files ever leaves your machine.
+That's it. File sizes and existence, heading structure in AGENTS.md, and workspace hygiene. No content from your files ever leaves your machine.
 
 ---
 
