@@ -1,11 +1,11 @@
 ---
 name: driftwatch
 description: >
-  Scan your OpenClaw workspace for health issues — truncation risks,
-  compaction anchor health, and workspace hygiene.
+  Scan your OpenClaw workspace for config health issues — truncation risks,
+  compaction survival problems, workspace hygiene, and missing config fields.
   Use when the operator asks to "scan my config", "check my bootstrap files",
-  "analyze my workspace", "check for truncation", "is my workspace healthy",
-  or any question about OpenClaw workspace health and bootstrap file status.
+  "analyze my workspace", "check for truncation", "is my config healthy",
+  or any question about OpenClaw configuration health and bootstrap file status.
 metadata:
   openclaw:
     requires:
@@ -23,45 +23,194 @@ metadata:
 python3 {baseDir}/scripts/scan.py --workspace <workspace_path>
 ```
 
-The `--workspace` argument defaults to the agent's own workspace (checks `OPENCLAW_WORKSPACE` env var, then falls back to `~/.openclaw/workspace/`). Most of the time you can omit it:
+The `--workspace` argument is optional. If omitted, Driftwatch checks the `OPENCLAW_WORKSPACE` environment variable, then falls back to `~/.openclaw/workspace/`. Most of the time just run:
 
 ```bash
 python3 {baseDir}/scripts/scan.py
 ```
 
-The scanner outputs JSON to stdout. Parse it, then present findings conversationally — never dump raw JSON at the operator.
+Output is JSON. Parse it, then present findings conversationally — never dump raw JSON at the operator.
 
 ## What the Scanner Checks
 
-Three modules run in sequence. Each contributes its own section to the output JSON:
+Four analysis modules run in sequence:
 
-**truncation** — Measures every bootstrap file's character count against the 20,000-char per-file limit and the 150,000-char aggregate budget. Tracks sequential budget consumption so you can see when MEMORY.md (last in the injection order) is getting starved.
+**truncation** — Measures every bootstrap file's character count against the 20,000-char per-file limit and the 150,000-char aggregate budget. Tracks sequential budget consumption so you can see when MEMORY.md (last in injection order) is getting starved.
 
-**compaction** — Checks whether AGENTS.md contains the two anchor sections referenced by post-compaction recovery protocols: `## Session Startup` and `## Red Lines`. Verifies each is present and within the 3,000-char cap. Note: AGENTS.md itself is a bootstrap file re-injected every turn — it's not subject to compaction. These sections matter because recovery logic references them when conversation context gets thin.
+**compaction** — Checks whether AGENTS.md contains the two anchor sections used by post-compaction recovery: `## Session Startup` and `## Red Lines`. Verifies each is present and within the 3,000-char cap.
 
-**hygiene** — Checks for duplicate memory files (MEMORY.md and memory.md coexisting), empty bootstrap files, missing subagent-required files, and stray markdown files that the operator may think are being loaded but aren't.
+**hygiene** — Checks for duplicate memory files, empty bootstrap slots, missing subagent-required files, and stray markdown files the operator may think are being loaded but aren't.
+
+**simulation** — Maps which lines and sections fall inside the truncation danger zone. For files over 18,000 chars, it shows exactly what content would be cut first. For files already over 20,000 chars, it shows what's being cut *right now*.
 
 ## Severity Levels
 
-- **critical** — address immediately. Something is broken or will break. Examples: an anchor section is missing from AGENTS.md, aggregate char budget exceeded.
-- **warning** — review soon. Not broken yet, but trending bad. Examples: AGENTS.md is 87% of its limit, an anchor section is near its 3,000-char cap.
-- **info** — awareness only. Nothing's wrong, just worth knowing. Examples: IDENTITY.md is empty, a non-bootstrap markdown file exists in the workspace root.
+- **critical** — address immediately. Something is broken or will break.
+- **warning** — review soon. Not broken yet, but trending bad.
+- **info** — awareness only. Nothing's wrong, just worth knowing.
 
 ## Presenting Findings
 
-Lead with critical findings. If there are none, say so up front — that's the good news. Then work through warnings and info grouped by module.
+Lead with critical findings. If there are none, say so first — that's the good news. Then work through warnings and info grouped by module.
 
-Translate the numbers into what they mean. Don't say "char_count: 18500, limit: 20000, percent_of_limit: 92.5". Say: "AGENTS.md is at 18,500 characters — 92% of its 20,000-char limit. If you add much more, the tail of the file will start getting cut off."
-
-Keep it brief. One or two sentences per finding. Operators don't need a lecture, they need to know what to do.
+Translate numbers into meaning. Don't say "char_count: 18500, percent_of_limit: 92.5". Say: "AGENTS.md is at 18,500 characters — 92% of its 20,000-char limit. If it grows much more, content near the bottom will start getting cut silently."
 
 **What not to do:** Don't modify any files. Don't attempt to auto-fix anything. Present findings and let the operator decide what to change.
 
 ---
 
+## Flags Reference
+
+### `--save` — Persist scan for drift tracking
+
+```bash
+python3 {baseDir}/scripts/scan.py --save
+```
+
+Saves the scan result to `~/.driftwatch/history/` as a timestamped JSON file. Run with `--save` regularly (daily cron is ideal) to build a history baseline. Nothing happens if the directory doesn't exist — it's created automatically.
+
+**When to suggest this:** When the operator asks about trends, when AGENTS.md is growing, or when you want to establish a baseline for future comparisons.
+
+### `--history` — Show drift trends from saved scans
+
+```bash
+python3 {baseDir}/scripts/scan.py --history
+```
+
+Loads stored scan history and adds a `trends` section to the output showing per-file growth rates and days-to-limit projections. Requires at least one prior `--save` scan to produce trend data.
+
+**The common combo:** `--save --history` — saves today's scan and shows trends based on all prior saves.
+
+When presenting trends: "AGENTS.md has been growing at about 150 chars per day over the past two weeks. At that rate it hits its 20,000-char limit in roughly 12 days."
+
+### `--visual` — Terminal bar chart
+
+```bash
+python3 {baseDir}/scripts/scan.py --visual
+```
+
+Outputs a color-coded terminal bar chart showing every bootstrap file's budget consumption. Green = healthy, yellow = approaching, red = at risk, blinking red = actively truncated. Useful for quick visual checks or screenshots to share with teammates.
+
+ANSI codes are automatically stripped when output is piped to a file.
+
+### `--html <path>` — Shareable HTML report
+
+```bash
+python3 {baseDir}/scripts/scan.py --html /tmp/report.html
+```
+
+Generates a self-contained HTML report at the specified path — no external dependencies, no CDN calls. The file includes interactive charts, sparklines (when trends data is present), and danger zone overlays for at-risk files. Useful for sharing with teammates or archiving a point-in-time snapshot.
+
+### `--check` — Cron-friendly alert mode
+
+```bash
+python3 {baseDir}/scripts/scan.py --check
+```
+
+Designed for automation and cron monitoring. Outputs a single summary line to stdout and exits with:
+- `0` — all healthy
+- `1` — warnings present
+- `2` — criticals present
+
+**This is the only mode that uses non-zero exit codes.** Normal scan mode always exits 0 — the agent interprets the JSON findings. `--check` is for cron jobs and shell scripts that watch exit codes.
+
+Example one-line outputs:
+```
+✓ All clear — 8 files healthy, 18.6% aggregate budget used
+⚠ Warning — AGENTS.md at 82% of limit
+✗ Critical — MEMORY.md TRUNCATED
+```
+
+**Thresholds** (configurable in `~/.driftwatch/config.json`):
+- Per-file warning: 70% of limit (default)
+- Per-file critical: 90% of limit
+- Aggregate warning: 60%
+- Aggregate critical: 80%
+- Growth rate warning: 200 chars/day
+
+**Flag combinations:**
+- `--check --save` — the cron use case: check thresholds AND save a history point
+- `--check --json` — one-line summary AND full JSON in stdout (both outputs)
+
+### `--json` — Full JSON with `--check`
+
+```bash
+python3 {baseDir}/scripts/scan.py --check --json
+```
+
+When `--check` is used alone, it suppresses the JSON blob and shows only the summary line. Add `--json` to get both the summary line and the full JSON report.
+
+---
+
+## Truncation Simulation
+
+The simulation module tells you exactly what content is at risk before truncation becomes a problem.
+
+**How it works:**
+
+OpenClaw keeps the first 14,000 chars (head) and last 4,000 chars (tail) of each bootstrap file. Everything between is cut. The "danger zone" is the gap between those boundaries.
+
+| File size | Situation |
+|-----------|-----------|
+| Under 18,000 chars | No danger zone — file fits entirely within head + tail |
+| 18,001 – 20,000 chars | Danger zone exists — content between chars 14,000 and `(size - 4,000)` is at risk |
+| Over 20,000 chars | **Actively truncated** — that same content is being cut right now |
+
+**When presenting simulation findings:**
+
+If a file is in the danger zone, name the specific sections at risk:
+
+> "AGENTS.md has 1,200 characters in the danger zone — lines 350 to 380. If this file grows past 20,000 chars, the `## Delegation Templates` section would be the first content your agent loses. Consider moving that section earlier in the file or trimming it."
+
+If a file is actively truncated:
+
+> "MEMORY.md is 25,000 characters — 5,000 over the limit. Your agent cannot see lines 290 through 450 right now. That's roughly 7,000 characters of context that's being silently cut every session."
+
+If all files are safe:
+
+> "No truncation risk — all files are well under 18,000 characters. The danger zone simulation shows nothing at risk right now."
+
+---
+
+## Suggested Workflows
+
+**Baseline + monitoring:**
+```bash
+# Establish baseline
+python3 {baseDir}/scripts/scan.py --save
+
+# Daily cron check (in crontab: 0 8 * * *)
+python3 {baseDir}/scripts/scan.py --check --save
+
+# Weekly review with trends
+python3 {baseDir}/scripts/scan.py --history --visual
+```
+
+**OpenClaw cron integration** — add to `openclaw.json`:
+```json
+{
+  "cron": [
+    {
+      "schedule": "0 8 * * *",
+      "command": "python3 ~/.openclaw/skills/driftwatch/scripts/scan.py --check --save",
+      "label": "driftwatch-daily"
+    }
+  ]
+}
+```
+
+When the cron fires and exits non-zero, report the summary line to the operator. Don't be noisy about exit 0.
+
+**Sharing a report with teammates:**
+```bash
+python3 {baseDir}/scripts/scan.py --history --html ~/Desktop/workspace-health.html
+```
+
+---
+
 ## Sample Output Interpretation
 
-Here's what a healthy workspace looks like in the JSON, and how to present it:
+Here's what a healthy workspace looks like and how to present it:
 
 ```json
 {
@@ -78,7 +227,6 @@ Here's what a healthy workspace looks like in the JSON, and how to present it:
     ],
     "aggregate": {
       "total_chars": 54000,
-      "aggregate_limit": 150000,
       "percent_of_aggregate": 36.0,
       "aggregate_status": "ok"
     }
@@ -97,22 +245,22 @@ Here's what a healthy workspace looks like in the JSON, and how to present it:
 }
 ```
 
-**How to present this to the operator:**
+**How to present this:**
 
-> Workspace looks healthy overall — no critical issues.
+> Workspace looks healthy — no critical issues.
 >
-> One thing to note: IDENTITY.md exists but is empty. It's taking up a bootstrap slot without contributing any instructions. Worth either filling it in or removing it.
+> One thing to note: IDENTITY.md exists but is empty. It's taking up a bootstrap slot without contributing anything. Worth filling in or removing.
 >
-> Your bootstrap files are using about 54,000 of your 150,000-character aggregate budget (36%) — plenty of room. AGENTS.md is at 46% of its individual limit, well clear of truncation territory.
+> Bootstrap files are using 54,000 of 150,000 characters (36% of aggregate budget) — plenty of room. AGENTS.md is at 46% of its individual limit, well clear of truncation territory.
 >
-> Both post-compaction anchor sections are present in AGENTS.md (Session Startup and Red Lines) and well within the 3,000-char cap.
-
-That's the tone. Factual, brief, actionable.
+> Both post-compaction anchor sections are present in AGENTS.md and within the 3,000-char cap.
 
 ---
 
 ## Notes
 
-- Character counts, not token counts. OpenClaw enforces char-based limits. The scanner reflects that exactly.
+- Character counts, not token counts. OpenClaw enforces char-based limits.
 - Findings are stamped with the OpenClaw version tag they were calibrated against (currently `2026.03`). If you're on a different version, limits may differ.
-- The scanner makes zero network calls. Everything runs locally against your workspace files.
+- The scanner makes zero network calls. Everything runs locally.
+- History data is stored locally in `~/.driftwatch/` — never transmitted.
+- Auto-retention pruning removes history files older than 90 days (configurable in `~/.driftwatch/config.json`).
