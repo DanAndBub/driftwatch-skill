@@ -37,7 +37,7 @@ Four modules run in sequence. Each contributes its own section to the output JSO
 
 **truncation** — Measures every bootstrap file's character count against the 20,000-char per-file limit and the 150,000-char aggregate budget. Tracks sequential budget consumption so you can see when MEMORY.md (last in the injection order) is getting starved.
 
-**compaction** — Parses AGENTS.md for the two sections that survive context compaction: `## Session Startup` and `## Red Lines`. Reports what percentage of the file lives outside those sections and will vanish after compaction.
+**compaction** — Checks whether AGENTS.md contains the two anchor sections referenced by post-compaction recovery protocols: `## Session Startup` and `## Red Lines`. Verifies each is present and within the 3,000-char cap. Note: AGENTS.md itself is a bootstrap file re-injected every turn — it's not subject to compaction. These sections matter because recovery logic references them when conversation context gets thin.
 
 **hygiene** — Checks for duplicate memory files (MEMORY.md and memory.md coexisting), empty bootstrap files, missing subagent-required files, and stray markdown files that the operator may think are being loaded but aren't.
 
@@ -45,8 +45,8 @@ Four modules run in sequence. Each contributes its own section to the output JSO
 
 ## Severity Levels
 
-- **critical** — address immediately. Something is broken or will break. Examples: a compaction-surviving section is missing, aggregate char budget exceeded.
-- **warning** — review soon. Not broken yet, but trending bad. Examples: AGENTS.md is 87% of its limit, a surviving section is near its 3,000-char cap.
+- **critical** — address immediately. Something is broken or will break. Examples: an anchor section is missing from AGENTS.md, aggregate char budget exceeded.
+- **warning** — review soon. Not broken yet, but trending bad. Examples: AGENTS.md is 87% of its limit, an anchor section is near its 3,000-char cap.
 - **info** — awareness only. Nothing's wrong, just worth knowing. Examples: IDENTITY.md is empty, a non-bootstrap markdown file exists in the workspace root.
 
 ## Presenting Findings
@@ -86,11 +86,10 @@ Here's what a healthy workspace looks like in the JSON, and how to present it:
     }
   },
   "compaction": {
-    "surviving_sections": [
+    "anchor_sections": [
       { "heading": "Session Startup", "found": true, "char_count": 1200, "status": "ok" },
       { "heading": "Red Lines", "found": true, "char_count": 800, "status": "ok" }
-    ],
-    "survival_ratio": 0.22
+    ]
   },
   "hygiene": {
     "findings": [
@@ -113,7 +112,7 @@ Here's what a healthy workspace looks like in the JSON, and how to present it:
 >
 > Your bootstrap files are using about 54,000 of your 150,000-character aggregate budget (36%) — plenty of room. AGENTS.md is at 46% of its individual limit, well clear of truncation territory.
 >
-> Both compaction-critical sections are present in AGENTS.md (Session Startup and Red Lines). About 22% of the file's content will survive a compaction event — that's normal.
+> Both post-compaction anchor sections are present in AGENTS.md (Session Startup and Red Lines) and well within the 3,000-char cap.
 
 That's the tone. Factual, brief, actionable.
 

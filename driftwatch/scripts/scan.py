@@ -74,14 +74,13 @@ def _build_summary(truncation, compaction, hygiene, config):
 
 
 def _resolve_workspace(args_workspace):
-    """Return workspace path from arg → env var → default, plus a warning if needed."""
+    """Return workspace path from arg → env var → default."""
     if args_workspace:
-        return os.path.expanduser(args_workspace), None
+        return os.path.expanduser(args_workspace)
     env = os.environ.get("OPENCLAW_WORKSPACE")
     if env:
-        return os.path.expanduser(env), None
-    default = os.path.expanduser("~/.openclaw/workspace/")
-    return default, None
+        return os.path.expanduser(env)
+    return os.path.expanduser("~/.openclaw/workspace/")
 
 
 def main():
@@ -106,7 +105,7 @@ def main():
     )
     args = parser.parse_args()
 
-    workspace_path, _warn = _resolve_workspace(args.workspace)
+    workspace_path = _resolve_workspace(args.workspace)
     workspace_path = os.path.abspath(workspace_path)
 
     # Import modules here so import failures are caught per-module
