@@ -74,6 +74,89 @@ def _build_summary(truncation, compaction, hygiene):
     }
 
 
+def _load_check_config():
+    """Load alert thresholds from ~/.driftwatch/config.json or use defaults."""
+    defaults = {
+        "per_file_warning_percent": 70,
+        "per_file_critical_percent": 90,
+        "aggregate_warning_percent": 60,
+        "aggregate_critical_percent": 80,
+        "growth_rate_warning_chars_per_day": 200,
+    }
+    config_path = os.path.expanduser("~/.driftwatch/config.json")
+    try:
+        if os.path.isfile(config_path):
+            with open(config_path, "r") as f:
+                data = json.load(f)
+            thresholds = data.get("alert_thresholds", {})
+            for key in defaults:
+                if key not in thresholds:
+                    thresholds[key] = defaults[key]
+            return thresholds
+    except (json.JSONDecodeError, OSError):
+        pass
+    return defaults
+
+
+def _check_thresholds(report):
+    """
+    Evaluate scan against thresholds. Print one-line summary. Return exit code.
+    0 = healthy, 1 = warning, 2 = critical.
+    """
+    thresholds = _load_check_config()
+    truncation = report.get("truncation", {})
+    files = truncation.get("files", [])
+    aggregate = truncation.get("aggregate", {})
+    trends = report.get("trends", {})
+
+    criticals = []
+    warnings = []
+
+    # Per-file checks
+    for f in files:
+        pct = f.get("percent_of_limit", 0)
+        name = f.get("file", "?")
+        if pct >= thresholds["per_file_critical_percent"]:
+            criticals.append(f"{name} at {pct:.0f}% of limit")
+        elif pct >= thresholds["per_file_warning_percent"]:
+            warnings.append(f"{name} at {pct:.0f}% of limit")
+
+    # Aggregate check
+    agg_pct = aggregate.get("percent_of_aggregate", 0)
+    if agg_pct >= thresholds["aggregate_critical_percent"]:
+        criticals.append(f"aggregate at {agg_pct:.0f}%")
+    elif agg_pct >= thresholds["aggregate_warning_percent"]:
+        warnings.append(f"aggregate at {agg_pct:.0f}%")
+
+    # Growth rate check (from trends if available)
+    trend_files = trends.get("files", [])
+    for tf in trend_files:
+        rate = tf.get("growth_rate_chars_per_day", 0)
+        if rate >= thresholds["growth_rate_warning_chars_per_day"]:
+            warnings.append(f"{tf['file']} growing {rate} chars/day")
+
+    # Simulation check — actively truncated files are always critical
+    simulation = report.get("simulation", {})
+    for sf in simulation.get("files", []):
+        if sf.get("status") == "truncated_now":
+            criticals.append(f"{sf['file']} TRUNCATED")
+
+    # Determine exit code and print summary
+    if criticals:
+        msg = f"✗ Critical — {', '.join(criticals)}"
+        print(msg)
+        return 2
+    elif warnings:
+        msg = f"⚠ Warning — {', '.join(warnings)}"
+        print(msg)
+        return 1
+    else:
+        num_files = len(files)
+        msg = f"✓ All clear — {num_files} files healthy, {agg_pct:.1f}% aggregate budget used"
+        print(msg)
+        return 0
+
+
 def _resolve_workspace(args_workspace):
     """Return workspace path from arg → env var → default."""
     if args_workspace:
@@ -124,6 +207,16 @@ def main():
         metavar="PATH",
         help="Generate self-contained HTML report at the specified path",
         default=None,
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Cron-friendly mode: one-line summary, exit 0/1/2 for healthy/warning/critical",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="With --check, also output full JSON (default: --check suppresses JSON)",
     )
     args = parser.parse_args()
 
@@ -209,6 +302,13 @@ def main():
             prune_history(history_dir)
         except Exception:
             pass  # Retention failure is non-critical
+
+    # --check: cron-friendly one-line output with exit codes
+    if args.check:
+        exit_code = _check_thresholds(report)
+        if args.json:
+            print(json.dumps(report, indent=2))
+        sys.exit(exit_code)
 
     # --visual: terminal bar chart
     if args.visual:
