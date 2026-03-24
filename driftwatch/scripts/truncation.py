@@ -104,18 +104,24 @@ def analyze_truncation(workspace_path: str) -> dict:
     chars_first_7 = sum(f["char_count"] for f in files if f["injection_order"] <= 7)
     remaining_after_7 = aggregate_limit - chars_first_7
     last_file = BOOTSTRAP_FILE_ORDER[-1]
-    starvation_risk = (
-        f"{last_file} may receive reduced budget — "
-        f"only {remaining_after_7} chars remain after first 7 files"
-    )
+
+    # Only flag starvation when remaining budget is below the per-file limit
+    if remaining_after_7 < BOOTSTRAP_MAX_CHARS_PER_FILE:
+        starvation_risk = (
+            f"{last_file} may receive reduced budget — "
+            f"only {remaining_after_7} chars remain after first 7 files"
+        )
+    else:
+        starvation_risk = None
 
     aggregate = {
         "total_chars": total_chars,
         "aggregate_limit": aggregate_limit,
         "percent_of_aggregate": percent_of_aggregate,
         "aggregate_status": aggregate_status,
-        "budget_starvation_risk": starvation_risk,
     }
+    if starvation_risk:
+        aggregate["budget_starvation_risk"] = starvation_risk
 
     return {
         "files": files,

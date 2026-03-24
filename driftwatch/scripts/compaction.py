@@ -21,9 +21,10 @@ def _parse_heading(line: str):
 
 def _parse_sections(lines):
     """
-    Parse lines into (level, heading_text, content) tuples.
+    Parse lines into (level, heading_text, content, start_line, end_line) tuples.
     content includes the heading line itself through (not including) the
     next heading of equal or higher level (lower level number).
+    start_line and end_line are line indices into the original lines list.
     """
     headings = []
     for i, line in enumerate(lines):
@@ -39,7 +40,7 @@ def _parse_sections(lines):
                 end_i = next_line_i
                 break
         content = "".join(lines[line_i:end_i])
-        sections.append((level, text, content))
+        sections.append((level, text, content, line_i, end_i))
 
     return sections
 
@@ -83,19 +84,19 @@ def analyze_compaction(workspace_path: str) -> dict:
     lines = raw.splitlines(keepends=True)
     sections = _parse_sections(lines)
 
-    # Build lookup: surviving heading name -> (level, content), case-insensitive
+    # Build lookup: surviving heading name -> (level, content, start, end), case-insensitive
     surviving_lookup = {}
-    for level, text, content in sections:
+    for level, text, content, start, end in sections:
         for target in COMPACTION_SURVIVING_HEADINGS:
             if text.lower() == target.lower() and target not in surviving_lookup:
-                surviving_lookup[target] = (level, content)
+                surviving_lookup[target] = (level, content, start, end)
 
     surviving_sections = []
     surviving_keys = set()
 
     for target in COMPACTION_SURVIVING_HEADINGS:
         if target in surviving_lookup:
-            level, content = surviving_lookup[target]
+            level, content, _, _ = surviving_lookup[target]
             char_count = len(content)
             cap = COMPACTION_HEADING_CAP_CHARS
             percent_of_cap = round(char_count / cap * 100, 1) if cap > 0 else 0.0
@@ -121,6 +122,20 @@ def analyze_compaction(workspace_path: str) -> dict:
                 "status": "critical",
             })
 
+    # Build line ranges for surviving sections to detect nested subsections
+    surviving_ranges = [
+        (surviving_lookup[t][2], surviving_lookup[t][3])
+        for t in COMPACTION_SURVIVING_HEADINGS
+        if t in surviving_lookup
+    ]
+
+    def _is_nested_under_surviving(start):
+        """Check if a section's start line falls within a surviving parent's range."""
+        for range_start, range_end in surviving_ranges:
+            if range_start < start < range_end:
+                return True
+        return False
+
     non_surviving_sections = [
         {
             "heading": text,
@@ -128,8 +143,8 @@ def analyze_compaction(workspace_path: str) -> dict:
             "char_count": len(content),
             "note": "This section will be lost after compaction",
         }
-        for level, text, content in sections
-        if text.lower() not in surviving_keys
+        for level, text, content, start, end in sections
+        if text.lower() not in surviving_keys and not _is_nested_under_surviving(start)
     ]
 
     total_surviving_chars = sum(s["char_count"] for s in surviving_sections if s["found"])
