@@ -1,4 +1,15 @@
-"""Driftwatch — Compaction Survival Analysis"""
+"""
+Driftwatch — Post-Compaction Anchor Health Check
+
+Checks whether AGENTS.md contains the two sections referenced as
+post-compaction recovery anchors: "Session Startup" and "Red Lines".
+These sections are used by OpenClaw's recovery protocols when conversation
+context gets thin after compaction.
+
+Note: AGENTS.md itself is a bootstrap file — it's re-injected in full every
+turn and is NOT subject to compaction. The anchor sections matter because
+they're referenced in recovery logic, not because the file gets compacted.
+"""
 
 import sys
 import os
@@ -9,6 +20,10 @@ from references.constants import (
     COMPACTION_SURVIVING_HEADINGS,
     COMPACTION_HEADING_CAP_CHARS,
 )
+
+# Use clearer local names for what these constants represent in this context
+ANCHOR_HEADINGS = COMPACTION_SURVIVING_HEADINGS
+ANCHOR_CAP_CHARS = COMPACTION_HEADING_CAP_CHARS
 
 
 def _parse_heading(line: str):
@@ -21,10 +36,9 @@ def _parse_heading(line: str):
 
 def _parse_sections(lines):
     """
-    Parse lines into (level, heading_text, content, start_line, end_line) tuples.
+    Parse lines into (level, heading_text, content) tuples.
     content includes the heading line itself through (not including) the
     next heading of equal or higher level (lower level number).
-    start_line and end_line are line indices into the original lines list.
     """
     headings = []
     for i, line in enumerate(lines):
@@ -40,7 +54,7 @@ def _parse_sections(lines):
                 end_i = next_line_i
                 break
         content = "".join(lines[line_i:end_i])
-        sections.append((level, text, content, line_i, end_i))
+        sections.append((level, text, content))
 
     return sections
 
@@ -52,28 +66,27 @@ def analyze_compaction(workspace_path: str) -> dict:
         return {
             "agents_md_exists": False,
             "agents_md_chars": 0,
-            "surviving_sections": [
+            "anchor_sections": [
                 {
                     "heading": h,
                     "found": False,
                     "heading_level": None,
                     "char_count": 0,
-                    "cap": COMPACTION_HEADING_CAP_CHARS,
+                    "cap": ANCHOR_CAP_CHARS,
                     "percent_of_cap": 0,
                     "status": "critical",
                 }
-                for h in COMPACTION_SURVIVING_HEADINGS
+                for h in ANCHOR_HEADINGS
             ],
-            "non_surviving_sections": [],
-            "total_surviving_chars": 0,
-            "total_non_surviving_chars": 0,
-            "survival_ratio": 0.0,
             "findings": [
                 {
                     "severity": "critical",
-                    "message": f"AGENTS.md not found — cannot determine if '{h}' section exists",
+                    "message": (
+                        f"AGENTS.md not found — cannot verify "
+                        f"'{h}' anchor section exists"
+                    ),
                 }
-                for h in COMPACTION_SURVIVING_HEADINGS
+                for h in ANCHOR_HEADINGS
             ],
         }
 
@@ -84,120 +97,73 @@ def analyze_compaction(workspace_path: str) -> dict:
     lines = raw.splitlines(keepends=True)
     sections = _parse_sections(lines)
 
-    # Build lookup: surviving heading name -> (level, content, start, end), case-insensitive
-    surviving_lookup = {}
-    for level, text, content, start, end in sections:
-        for target in COMPACTION_SURVIVING_HEADINGS:
-            if text.lower() == target.lower() and target not in surviving_lookup:
-                surviving_lookup[target] = (level, content, start, end)
+    # Build lookup: anchor heading name -> (level, content), case-insensitive
+    anchor_lookup = {}
+    for level, text, content in sections:
+        for target in ANCHOR_HEADINGS:
+            if text.lower() == target.lower() and target not in anchor_lookup:
+                anchor_lookup[target] = (level, content)
 
-    surviving_sections = []
-    surviving_keys = set()
+    anchor_sections = []
 
-    for target in COMPACTION_SURVIVING_HEADINGS:
-        if target in surviving_lookup:
-            level, content, _, _ = surviving_lookup[target]
+    for target in ANCHOR_HEADINGS:
+        if target in anchor_lookup:
+            level, content = anchor_lookup[target]
             char_count = len(content)
-            cap = COMPACTION_HEADING_CAP_CHARS
-            percent_of_cap = round(char_count / cap * 100, 1) if cap > 0 else 0.0
-            status = "warning" if char_count > cap else "ok"
-            surviving_sections.append({
+            percent_of_cap = round(char_count / ANCHOR_CAP_CHARS * 100, 1) if ANCHOR_CAP_CHARS > 0 else 0.0
+            status = "warning" if char_count > ANCHOR_CAP_CHARS else "ok"
+            anchor_sections.append({
                 "heading": target,
                 "found": True,
                 "heading_level": level,
                 "char_count": char_count,
-                "cap": cap,
+                "cap": ANCHOR_CAP_CHARS,
                 "percent_of_cap": percent_of_cap,
                 "status": status,
             })
-            surviving_keys.add(target.lower())
         else:
-            surviving_sections.append({
+            anchor_sections.append({
                 "heading": target,
                 "found": False,
                 "heading_level": None,
                 "char_count": 0,
-                "cap": COMPACTION_HEADING_CAP_CHARS,
+                "cap": ANCHOR_CAP_CHARS,
                 "percent_of_cap": 0,
                 "status": "critical",
             })
 
-    # Build line ranges for surviving sections to detect nested subsections
-    surviving_ranges = [
-        (surviving_lookup[t][2], surviving_lookup[t][3])
-        for t in COMPACTION_SURVIVING_HEADINGS
-        if t in surviving_lookup
-    ]
-
-    def _is_nested_under_surviving(start):
-        """Check if a section's start line falls within a surviving parent's range."""
-        for range_start, range_end in surviving_ranges:
-            if range_start < start < range_end:
-                return True
-        return False
-
-    non_surviving_sections = [
-        {
-            "heading": text,
-            "heading_level": level,
-            "char_count": len(content),
-            "note": "This section will be lost after compaction",
-        }
-        for level, text, content, start, end in sections
-        if text.lower() not in surviving_keys and not _is_nested_under_surviving(start)
-    ]
-
-    total_surviving_chars = sum(s["char_count"] for s in surviving_sections if s["found"])
-    # Avoid double-counting nested sections: derive non-surviving from the total
-    total_non_surviving_chars = max(0, agents_md_chars - total_surviving_chars)
-    survival_ratio = round(total_surviving_chars / agents_md_chars, 2) if agents_md_chars > 0 else 0.0
-
     findings = []
 
-    for s in surviving_sections:
+    for s in anchor_sections:
         if not s["found"]:
             findings.append({
                 "severity": "critical",
-                "message": f"Missing '## {s['heading']}' section — no {s['heading'].lower()} will survive compaction",
+                "message": (
+                    f"Missing '## {s['heading']}' section in AGENTS.md — "
+                    f"post-compaction recovery protocols reference this anchor"
+                ),
             })
         elif s["status"] == "warning":
             findings.append({
                 "severity": "warning",
                 "message": (
-                    f"'{s['heading']}' section is {s['char_count']} chars, exceeding the "
-                    f"{COMPACTION_HEADING_CAP_CHARS}-char cap — content will be truncated "
-                    f"during compaction re-injection"
+                    f"'{s['heading']}' section is {s['char_count']} chars, "
+                    f"exceeding the {ANCHOR_CAP_CHARS}-char cap — "
+                    f"content may be truncated during post-compaction re-injection"
                 ),
             })
         else:
             findings.append({
                 "severity": "info",
                 "message": (
-                    f"'{s['heading']}' section found and within budget "
-                    f"({s['char_count']} of {COMPACTION_HEADING_CAP_CHARS} chars)"
-                ),
-            })
-
-    if agents_md_chars > 0:
-        non_survival_ratio = total_non_surviving_chars / agents_md_chars
-        if non_survival_ratio > 0.70:
-            pct = round(non_survival_ratio * 100)
-            findings.append({
-                "severity": "warning",
-                "message": (
-                    f"{pct}% of AGENTS.md content ({total_non_surviving_chars} chars) will be "
-                    f"lost after compaction. Consider moving critical rules into Session Startup "
-                    f"or Red Lines sections."
+                    f"'{s['heading']}' anchor section present and within budget "
+                    f"({s['char_count']} of {ANCHOR_CAP_CHARS} chars)"
                 ),
             })
 
     return {
         "agents_md_exists": True,
         "agents_md_chars": agents_md_chars,
-        "surviving_sections": surviving_sections,
-        "non_surviving_sections": non_surviving_sections,
-        "total_surviving_chars": total_surviving_chars,
-        "total_non_surviving_chars": total_non_surviving_chars,
-        "survival_ratio": survival_ratio,
+        "anchor_sections": anchor_sections,
         "findings": findings,
     }
