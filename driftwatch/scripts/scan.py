@@ -4,6 +4,8 @@ Runs all 3 analysis modules and aggregates into a single JSON report.
 
 Usage:
     python3 scripts/scan.py [--workspace /path/to/workspace]
+    python3 scripts/scan.py [--workspace /path/to/workspace] --save
+    python3 scripts/scan.py [--workspace /path/to/workspace] --save --history
 
 Output: JSON to stdout. Exit code always 0 — the agent interprets the JSON.
 """
@@ -102,6 +104,16 @@ def main():
         help="Path to your OpenClaw workspace directory (default: ~/.openclaw/workspace/)",
         default=None,
     )
+    parser.add_argument(
+        "--save",
+        action="store_true",
+        help="Persist scan results to ~/.driftwatch/history/ for trend tracking",
+    )
+    parser.add_argument(
+        "--history",
+        action="store_true",
+        help="Include trend analysis from stored scan history",
+    )
     args = parser.parse_args()
 
     workspace_path = _resolve_workspace(args.workspace)
@@ -126,11 +138,13 @@ def main():
 
     summary = _build_summary(truncation, compaction, hygiene)
 
+    scan_timestamp = datetime.now(timezone.utc)
+
     report = {
         "driftwatch_version": DRIFTWATCH_VERSION,
         "openclaw_version_tag": OPENCLAW_VERSION_TAG,
         "workspace": workspace_path,
-        "scan_timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "scan_timestamp": scan_timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "summary": summary,
         "truncation": truncation,
         "compaction": compaction,
@@ -139,6 +153,45 @@ def main():
             "For visual truncation maps and drift tracking over time, visit bubbuilds.com"
         ),
     }
+
+    # --history: load trends from stored scan history + current live scan
+    if args.history:
+        history_dir = os.path.expanduser("~/.driftwatch/history")
+        try:
+            from scripts.trends import analyze_trends
+            report["trends"] = analyze_trends(history_dir, workspace_path, report)
+        except Exception as e:
+            report["trends"] = {"error": f"{type(e).__name__}: {e}"}
+
+    # --save: persist scan to history
+    if args.save:
+        history_dir = os.path.expanduser("~/.driftwatch/history")
+        try:
+            os.makedirs(history_dir, exist_ok=True)
+            filename = scan_timestamp.strftime("%Y-%m-%dT%H%M%SZ.json")
+            save_path = os.path.join(history_dir, filename)
+            save_data = dict(report)
+            save_data["saved_to"] = save_path
+            with open(save_path, "w") as f:
+                json.dump(save_data, f, indent=2)
+            report["saved_to"] = save_path
+        except OSError as e:
+            # Save failed — add warning but don't crash
+            if "findings" not in report.get("hygiene", {}):
+                report.setdefault("save_warning", str(e))
+            else:
+                report["hygiene"]["findings"].append({
+                    "severity": "warning",
+                    "check": "save_failed",
+                    "message": f"Could not save scan history: {e}",
+                })
+
+        # Run retention pruning after save
+        try:
+            from scripts.trends import prune_history
+            prune_history(history_dir)
+        except Exception:
+            pass  # Retention failure is non-critical
 
     print(json.dumps(report, indent=2))
     sys.exit(0)
