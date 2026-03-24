@@ -114,6 +114,17 @@ def main():
         action="store_true",
         help="Include trend analysis from stored scan history",
     )
+    parser.add_argument(
+        "--visual",
+        action="store_true",
+        help="Output terminal bar chart of bootstrap file budget",
+    )
+    parser.add_argument(
+        "--html",
+        metavar="PATH",
+        help="Generate self-contained HTML report at the specified path",
+        default=None,
+    )
     args = parser.parse_args()
 
     workspace_path = _resolve_workspace(args.workspace)
@@ -199,7 +210,21 @@ def main():
         except Exception:
             pass  # Retention failure is non-critical
 
-    print(json.dumps(report, indent=2))
+    # --visual: terminal bar chart
+    if args.visual:
+        from scripts.visual import render_terminal
+        print(render_terminal(report))
+    else:
+        print(json.dumps(report, indent=2))
+
+    # --html: generate HTML report
+    if args.html:
+        try:
+            from scripts.visual import render_html
+            render_html(report, args.html)
+        except Exception as e:
+            print(f"Warning: HTML report generation failed: {e}", file=sys.stderr)
+
     sys.exit(0)
 
 
