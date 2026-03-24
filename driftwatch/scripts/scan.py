@@ -132,9 +132,14 @@ def main():
         from scripts.hygiene import analyze_hygiene
         return analyze_hygiene(wp)
 
+    def load_simulation(wp):
+        from scripts.simulation import analyze_simulation
+        return analyze_simulation(wp)
+
     truncation = _run_module(load_truncation, workspace_path)
     compaction = _run_module(load_compaction, workspace_path)
     hygiene    = _run_module(load_hygiene,    workspace_path)
+    simulation = _run_module(load_simulation, workspace_path)
 
     summary = _build_summary(truncation, compaction, hygiene)
 
@@ -149,6 +154,7 @@ def main():
         "truncation": truncation,
         "compaction": compaction,
         "hygiene": hygiene,
+        "simulation": simulation,
         "web_dashboard_note": (
             "For visual truncation maps and drift tracking over time, visit bubbuilds.com"
         ),
