@@ -6,12 +6,19 @@ import os
 from scripts.config_check import analyze_config
 
 
-def test_valid_config_all_fields(make_workspace, make_config):
+def _patch_config_paths(monkeypatch, config_path):
+    """Monkeypatch _get_config_paths to only return the fixture config location."""
+    monkeypatch.setattr(
+        "scripts.config_check._get_config_paths",
+        lambda workspace_path: [config_path],
+    )
+
+
+def test_valid_config_all_fields(make_workspace, make_config, monkeypatch):
     """Config with all expected fields — all present, none missing."""
     ws = make_workspace()
-    # Place config at the workspace parent dir (where config_check looks)
     config_dir = os.path.dirname(ws)
-    make_config(config_dir, {
+    config_path = make_config(config_dir, {
         "anthropicApiKey": "sk-ant-test-key",
         "model": "claude-sonnet-4-6",
         "agentProvider": "anthropic",
@@ -19,6 +26,7 @@ def test_valid_config_all_fields(make_workspace, make_config):
         "skills": ["driftwatch"],
         "sandbox": "docker",
     })
+    _patch_config_paths(monkeypatch, config_path)
 
     result = analyze_config(ws)
 
@@ -30,9 +38,12 @@ def test_valid_config_all_fields(make_workspace, make_config):
     assert result["fields_missing"] == []
 
 
-def test_missing_config_file(make_workspace):
+def test_missing_config_file(make_workspace, monkeypatch):
     """No config file anywhere — should warn, all fields missing."""
     ws = make_workspace()
+    # Point at a path that doesn't exist
+    _patch_config_paths(monkeypatch, os.path.join(ws, "nonexistent", "openclaw.json"))
+
     result = analyze_config(ws)
 
     assert result["config_found"] is False
@@ -40,11 +51,12 @@ def test_missing_config_file(make_workspace):
     assert any(f["severity"] == "warning" for f in result["findings"])
 
 
-def test_malformed_json(make_workspace, make_config):
+def test_malformed_json(make_workspace, make_config, monkeypatch):
     """Invalid JSON in config — parseable should be False."""
     ws = make_workspace()
     config_dir = os.path.dirname(ws)
-    make_config(config_dir, raw_text='{"broken": true,}')  # trailing comma
+    config_path = make_config(config_dir, raw_text='{"broken": true,}')  # trailing comma
+    _patch_config_paths(monkeypatch, config_path)
 
     result = analyze_config(ws)
 
@@ -53,15 +65,16 @@ def test_malformed_json(make_workspace, make_config):
     assert any("parse error" in f["message"].lower() for f in result["findings"])
 
 
-def test_api_key_never_in_output(make_workspace, make_config):
+def test_api_key_never_in_output(make_workspace, make_config, monkeypatch):
     """API key values must never appear in the output — security regression test."""
     ws = make_workspace()
     config_dir = os.path.dirname(ws)
     secret = "sk-ant-super-secret-key-12345"
-    make_config(config_dir, {
+    config_path = make_config(config_dir, {
         "anthropicApiKey": secret,
         "model": "claude-sonnet-4-6",
     })
+    _patch_config_paths(monkeypatch, config_path)
 
     result = analyze_config(ws)
 

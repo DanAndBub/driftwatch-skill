@@ -112,7 +112,7 @@ def test_empty_workspace_no_crash(empty_workspace):
     assert "error" not in report["config"]
 
 
-def test_realistic_workspace(make_workspace, make_config):
+def test_realistic_workspace(make_workspace, make_config, monkeypatch):
     """Integration test with realistic content, populated config, and edge cases."""
     agents = (
         "# Agent Configuration\n\n"
@@ -150,9 +150,9 @@ def test_realistic_workspace(make_workspace, make_config):
         "MEMORY.md": "# Memory\n- User prefers pytest over unittest\n- Project uses FastAPI\n",
     })
 
-    # Add a config file
+    # Add a config file and patch path resolution to use it
     config_dir = os.path.dirname(ws)
-    make_config(config_dir, {
+    config_path = make_config(config_dir, {
         "anthropicApiKey": "sk-ant-real-key-here",
         "model": "claude-sonnet-4-6",
         "agentProvider": "anthropic",
@@ -160,6 +160,10 @@ def test_realistic_workspace(make_workspace, make_config):
         "skills": ["driftwatch"],
         "sandbox": "docker",
     })
+    monkeypatch.setattr(
+        "scripts.config_check._get_config_paths",
+        lambda workspace_path: [config_path],
+    )
 
     report = _run_scan(ws)
 
