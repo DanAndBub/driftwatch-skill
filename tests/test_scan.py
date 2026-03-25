@@ -3,12 +3,11 @@
 import json
 import os
 import re
-from unittest.mock import patch
 
 from scripts.truncation import analyze_truncation
 from scripts.compaction import analyze_compaction
 from scripts.hygiene import analyze_hygiene
-from scripts.config_check import analyze_config
+from scripts.simulation import analyze_simulation
 
 
 # Re-implement the core scan logic here to avoid argparse/sys.exit issues.
@@ -27,11 +26,11 @@ def _run_scan(workspace_path):
     truncation = _run_module(analyze_truncation, workspace_path)
     compaction = _run_module(analyze_compaction, workspace_path)
     hygiene = _run_module(analyze_hygiene, workspace_path)
-    config = _run_module(analyze_config, workspace_path)
+    simulation = _run_module(analyze_simulation, workspace_path)
 
     # Import summary builder from scan module
     from scripts.scan import _build_summary
-    summary = _build_summary(truncation, compaction, hygiene, config)
+    summary = _build_summary(truncation, compaction, hygiene, simulation)
 
     return {
         "driftwatch_version": DRIFTWATCH_VERSION,
@@ -42,7 +41,7 @@ def _run_scan(workspace_path):
         "truncation": truncation,
         "compaction": compaction,
         "hygiene": hygiene,
-        "config": config,
+        "simulation": simulation,
     }
 
 
@@ -54,10 +53,13 @@ def test_full_scan_valid_json(minimal_workspace):
     required_keys = [
         "driftwatch_version", "openclaw_version_tag", "workspace",
         "scan_timestamp", "summary", "truncation", "compaction",
-        "hygiene", "config",
+        "hygiene",
     ]
     for key in required_keys:
         assert key in report, f"Missing top-level key: {key}"
+
+    # Config key should NOT be present
+    assert "config" not in report, "config key should not be in output after module removal"
 
     # Verify timestamp format
     assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", report["scan_timestamp"])
@@ -78,15 +80,12 @@ def test_module_error_isolation(minimal_workspace):
     def broken_compaction(wp):
         raise RuntimeError("Intentional test failure")
 
-    report = _run_scan.__wrapped__(minimal_workspace) if hasattr(_run_scan, '__wrapped__') else None
-
-    # Manually test isolation by running modules with one broken
     from scripts.scan import _run_module, _build_summary
 
     truncation = _run_module(analyze_truncation, minimal_workspace)
     compaction = _run_module(broken_compaction, minimal_workspace)
     hygiene = _run_module(analyze_hygiene, minimal_workspace)
-    config = _run_module(analyze_config, minimal_workspace)
+    simulation = _run_module(analyze_simulation, minimal_workspace)
 
     assert "error" in compaction
     assert "RuntimeError" in compaction["error"]
@@ -94,10 +93,9 @@ def test_module_error_isolation(minimal_workspace):
     # Other modules should have normal results
     assert "error" not in truncation
     assert "error" not in hygiene
-    assert "error" not in config
 
     # Summary should still compute (errored module counts as 1 warning)
-    summary = _build_summary(truncation, compaction, hygiene, config)
+    summary = _build_summary(truncation, compaction, hygiene, simulation)
     assert summary["warning"] >= 1
 
 
@@ -109,11 +107,10 @@ def test_empty_workspace_no_crash(empty_workspace):
     assert "error" not in report["truncation"]
     assert "error" not in report["compaction"]
     assert "error" not in report["hygiene"]
-    assert "error" not in report["config"]
 
 
-def test_realistic_workspace(make_workspace, make_config, monkeypatch):
-    """Integration test with realistic content, populated config, and edge cases."""
+def test_realistic_workspace(make_workspace):
+    """Integration test with realistic content and edge cases."""
     agents = (
         "# Agent Configuration\n\n"
         "## Session Startup\n"
@@ -150,26 +147,14 @@ def test_realistic_workspace(make_workspace, make_config, monkeypatch):
         "MEMORY.md": "# Memory\n- User prefers pytest over unittest\n- Project uses FastAPI\n",
     })
 
-    # Add a config file and patch path resolution to use it
-    config_dir = os.path.dirname(ws)
-    config_path = make_config(config_dir, {
-        "anthropicApiKey": "sk-ant-real-key-here",
-        "model": "claude-sonnet-4-6",
-        "agentProvider": "anthropic",
-        "heartbeat": True,
-        "skills": ["driftwatch"],
-        "sandbox": "docker",
-    })
-    monkeypatch.setattr(
-        "scripts.config_check._get_config_paths",
-        lambda workspace_path: [config_path],
-    )
-
     report = _run_scan(ws)
 
     # No errors in any module
-    for module in ["truncation", "compaction", "hygiene", "config"]:
+    for module in ["truncation", "compaction", "hygiene"]:
         assert "error" not in report[module], f"{module} had error: {report[module].get('error')}"
+
+    # Config key should not exist
+    assert "config" not in report
 
     # Truncation: all files should be well under limits
     for f in report["truncation"]["files"]:
@@ -181,15 +166,6 @@ def test_realistic_workspace(make_workspace, make_config, monkeypatch):
     for s in report["compaction"]["anchor_sections"]:
         assert s["found"] is True
         assert s["status"] == "ok"
-
-    # Config: all fields present
-    assert report["config"]["config_found"] is True
-    assert report["config"]["parseable"] is True
-    assert report["config"]["fields_missing"] == []
-
-    # Security: API key not in output
-    serialized = json.dumps(report)
-    assert "sk-ant-real-key-here" not in serialized
 
     # Hygiene: no critical or warning findings for a clean workspace
     for f in report["hygiene"]["findings"]:
