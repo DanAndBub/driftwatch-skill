@@ -38,7 +38,7 @@ def _load_config():
     }
     try:
         if os.path.isfile(DEFAULT_CONFIG_PATH):
-            with open(DEFAULT_CONFIG_PATH, "r") as f:
+            with open(DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
                 user_config = json.load(f)
             # Merge with defaults
             for key in defaults:
@@ -61,7 +61,7 @@ def _load_history(history_dir, workspace_path, max_scans=10):
             continue
         fpath = os.path.join(history_dir, fname)
         try:
-            with open(fpath, "r") as f:
+            with open(fpath, "r", encoding="utf-8") as f:
                 data = json.load(f)
             # Filter to matching workspace
             if data.get("workspace") != workspace_path:
@@ -154,8 +154,23 @@ def analyze_trends(history_dir, workspace_path, current_scan, max_scans=10):
     newest_ts, newest_scan = stored_scans[-1]
     time_span = (newest_ts - oldest_ts).total_seconds() / 86400  # days
 
-    if time_span <= 0:
-        time_span = 1  # Avoid division by zero for same-day scans
+    if time_span < 1.0:
+        # Don't extrapolate daily rates from sub-day scan intervals —
+        # the math produces absurd numbers (e.g., -200K chars/day from
+        # a 17-hour span). Require at least 24 hours between oldest
+        # and newest scan for meaningful daily rate calculation.
+        result = {
+            "scans_analyzed": len(stored_scans),
+            "time_span_days": round(time_span, 2),
+            "note": (
+                "Scans are less than 1 day apart. "
+                "Daily rate trends require at least 24 hours between "
+                "oldest and newest scan."
+            ),
+        }
+        if findings:
+            result["findings"] = findings
+        return result
 
     # Per-file trends
     file_trends = []
@@ -235,7 +250,7 @@ def prune_history(history_dir):
             continue
         fpath = os.path.join(history_dir, fname)
         try:
-            with open(fpath, "r") as f:
+            with open(fpath, "r", encoding="utf-8") as f:
                 data = json.load(f)
             ts_str = data.get("scan_timestamp", "")
             ts = datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)

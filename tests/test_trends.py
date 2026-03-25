@@ -231,3 +231,62 @@ def test_config_invalid(tmp_path, monkeypatch):
     config, warning = _load_config()
     assert warning is not None
     assert config["retention_days"] == 90  # Defaults used
+
+
+def test_sub_day_scans_no_extrapolation(tmp_path):
+    """Scans less than 24 hours apart should NOT extrapolate daily rates.
+
+    This is the bug that caused IDENTITY.md to show -202,143 chars/day —
+    a 17-hour span between scans got extrapolated to a daily rate.
+    """
+    history_dir = str(tmp_path / "history")
+    os.makedirs(history_dir)
+    ws = "/test/ws"
+
+    # Two scans 6 hours apart — IDENTITY.md dropped from 634 to 14 chars
+    ts1 = datetime(2026, 3, 20, 6, 0, 0, tzinfo=timezone.utc)
+    scan1 = _make_scan_json(ws, ts1, {"AGENTS.md": 6000, "SOUL.md": 3000,
+        "TOOLS.md": 2000, "IDENTITY.md": 634, "USER.md": 2000,
+        "HEARTBEAT.md": 4000, "BOOTSTRAP.md": 3000, "MEMORY.md": 5000})
+    _save_scan(history_dir, scan1, ts1)
+
+    ts2 = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+    scan2 = _make_scan_json(ws, ts2, {"AGENTS.md": 6000, "SOUL.md": 3000,
+        "TOOLS.md": 2000, "IDENTITY.md": 14, "USER.md": 2000,
+        "HEARTBEAT.md": 4000, "BOOTSTRAP.md": 3000, "MEMORY.md": 5000})
+    _save_scan(history_dir, scan2, ts2)
+
+    current = _make_scan_json(ws, datetime(2026, 3, 20, 23, 0, 0, tzinfo=timezone.utc),
+        {"AGENTS.md": 6000, "SOUL.md": 3000, "TOOLS.md": 2000,
+         "IDENTITY.md": 14, "USER.md": 2000, "HEARTBEAT.md": 4000,
+         "BOOTSTRAP.md": 3000, "MEMORY.md": 5000})
+
+    result = analyze_trends(history_dir, ws, current)
+
+    # Should refuse to calculate daily rates from sub-day span
+    assert "note" in result
+    assert "less than 1 day" in result["note"]
+    # Should NOT contain per-file trends with absurd rates
+    assert "files" not in result or len(result.get("files", [])) == 0
+
+
+def test_exactly_one_day_calculates_trends(tmp_path):
+    """Scans exactly 24 hours apart should produce valid trend data."""
+    history_dir = str(tmp_path / "history")
+    os.makedirs(history_dir)
+    ws = "/test/ws"
+
+    ts1 = datetime(2026, 3, 19, 12, 0, 0, tzinfo=timezone.utc)
+    scan1 = _make_scan_json(ws, ts1)
+    _save_scan(history_dir, scan1, ts1)
+
+    ts2 = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+    scan2 = _make_scan_json(ws, ts2)
+    _save_scan(history_dir, scan2, ts2)
+
+    current = _make_scan_json(ws, datetime(2026, 3, 21, 12, 0, 0, tzinfo=timezone.utc))
+    result = analyze_trends(history_dir, ws, current)
+
+    # Exactly 1 day span — should calculate normally
+    assert "files" in result
+    assert len(result["files"]) == 8

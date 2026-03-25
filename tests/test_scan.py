@@ -7,12 +7,13 @@ import re
 from scripts.truncation import analyze_truncation
 from scripts.compaction import analyze_compaction
 from scripts.hygiene import analyze_hygiene
+from scripts.simulation import analyze_simulation
 
 
 # Re-implement the core scan logic here to avoid argparse/sys.exit issues.
 # This tests the aggregation and summary logic without subprocess overhead.
 def _run_scan(workspace_path):
-    """Run all 3 modules and aggregate, mirroring scan.py's main()."""
+    """Run all 4 modules and aggregate, mirroring scan.py's main()."""
     from datetime import datetime, timezone
     from references.constants import DRIFTWATCH_VERSION, OPENCLAW_VERSION_TAG
 
@@ -25,10 +26,11 @@ def _run_scan(workspace_path):
     truncation = _run_module(analyze_truncation, workspace_path)
     compaction = _run_module(analyze_compaction, workspace_path)
     hygiene = _run_module(analyze_hygiene, workspace_path)
+    simulation = _run_module(analyze_simulation, workspace_path)
 
     # Import summary builder from scan module
     from scripts.scan import _build_summary
-    summary = _build_summary(truncation, compaction, hygiene)
+    summary = _build_summary(truncation, compaction, hygiene, simulation)
 
     return {
         "driftwatch_version": DRIFTWATCH_VERSION,
@@ -39,6 +41,7 @@ def _run_scan(workspace_path):
         "truncation": truncation,
         "compaction": compaction,
         "hygiene": hygiene,
+        "simulation": simulation,
     }
 
 
@@ -82,6 +85,7 @@ def test_module_error_isolation(minimal_workspace):
     truncation = _run_module(analyze_truncation, minimal_workspace)
     compaction = _run_module(broken_compaction, minimal_workspace)
     hygiene = _run_module(analyze_hygiene, minimal_workspace)
+    simulation = _run_module(analyze_simulation, minimal_workspace)
 
     assert "error" in compaction
     assert "RuntimeError" in compaction["error"]
@@ -91,7 +95,7 @@ def test_module_error_isolation(minimal_workspace):
     assert "error" not in hygiene
 
     # Summary should still compute (errored module counts as 1 warning)
-    summary = _build_summary(truncation, compaction, hygiene)
+    summary = _build_summary(truncation, compaction, hygiene, simulation)
     assert summary["warning"] >= 1
 
 

@@ -1,11 +1,11 @@
 ---
 name: driftwatch
 description: >
-  Scan your OpenClaw workspace for config health issues — truncation risks,
-  compaction survival problems, workspace hygiene, and missing config fields.
-  Use when the operator asks to "scan my config", "check my bootstrap files",
-  "analyze my workspace", "check for truncation", "is my config healthy",
-  or any question about OpenClaw configuration health and bootstrap file status.
+  Scan your OpenClaw workspace for truncation risks, compaction anchor health,
+  workspace hygiene, and drift tracking over time. Use when the operator asks
+  to "scan my config", "check my bootstrap files", "analyze my workspace",
+  "check for truncation", "is my config healthy", or any question about
+  OpenClaw workspace health, bootstrap file status, or truncation simulation.
 metadata:
   openclaw:
     requires:

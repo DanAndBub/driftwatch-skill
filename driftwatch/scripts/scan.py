@@ -57,14 +57,30 @@ def _count_severities_findings(result):
     return counts
 
 
-def _build_summary(truncation, compaction, hygiene):
+def _count_severities_simulation(result):
+    """Extract critical/warning counts from simulation module output."""
+    counts = {"critical": 0, "warning": 0, "info": 0}
+    if "error" in result:
+        counts["warning"] += 1
+        return counts
+    for f in result.get("files", []):
+        status = f.get("status")
+        if status == "truncated_now":
+            counts["critical"] += 1
+        elif status == "at_risk":
+            counts["warning"] += 1
+    return counts
+
+
+def _build_summary(truncation, compaction, hygiene, simulation):
     tc = _count_severities_truncation(truncation)
     cc = _count_severities_findings(compaction)
     hc = _count_severities_findings(hygiene)
+    sc = _count_severities_simulation(simulation)
 
-    critical = tc["critical"] + cc["critical"] + hc["critical"]
-    warning  = tc["warning"]  + cc["warning"]  + hc["warning"]
-    info     = tc["info"]     + cc["info"]      + hc["info"]
+    critical = tc["critical"] + cc["critical"] + hc["critical"] + sc["critical"]
+    warning  = tc["warning"]  + cc["warning"]  + hc["warning"]  + sc["warning"]
+    info     = tc["info"]     + cc["info"]      + hc["info"]     + sc["info"]
 
     return {
         "critical": critical,
@@ -86,7 +102,7 @@ def _load_check_config():
     config_path = os.path.expanduser("~/.driftwatch/config.json")
     try:
         if os.path.isfile(config_path):
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             thresholds = data.get("alert_thresholds", {})
             for key in defaults:
@@ -245,7 +261,7 @@ def main():
     hygiene    = _run_module(load_hygiene,    workspace_path)
     simulation = _run_module(load_simulation, workspace_path)
 
-    summary = _build_summary(truncation, compaction, hygiene)
+    summary = _build_summary(truncation, compaction, hygiene, simulation)
 
     scan_timestamp = datetime.now(timezone.utc)
 
@@ -264,16 +280,7 @@ def main():
         ),
     }
 
-    # --history: load trends from stored scan history + current live scan
-    if args.history:
-        history_dir = os.path.expanduser("~/.driftwatch/history")
-        try:
-            from scripts.trends import analyze_trends
-            report["trends"] = analyze_trends(history_dir, workspace_path, report)
-        except Exception as e:
-            report["trends"] = {"error": f"{type(e).__name__}: {e}"}
-
-    # --save: persist scan to history
+    # --save: persist scan to history (runs BEFORE --history so trends include this scan)
     if args.save:
         history_dir = os.path.expanduser("~/.driftwatch/history")
         try:
@@ -282,7 +289,8 @@ def main():
             save_path = os.path.join(history_dir, filename)
             save_data = dict(report)
             save_data["saved_to"] = save_path
-            with open(save_path, "w") as f:
+            fd = os.open(save_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(save_data, f, indent=2)
             report["saved_to"] = save_path
         except OSError as e:
@@ -302,6 +310,15 @@ def main():
             prune_history(history_dir)
         except Exception:
             pass  # Retention failure is non-critical
+
+    # --history: load trends from stored scan history + current live scan
+    if args.history:
+        history_dir = os.path.expanduser("~/.driftwatch/history")
+        try:
+            from scripts.trends import analyze_trends
+            report["trends"] = analyze_trends(history_dir, workspace_path, report)
+        except Exception as e:
+            report["trends"] = {"error": f"{type(e).__name__}: {e}"}
 
     # --check: cron-friendly one-line output with exit codes
     if args.check:
