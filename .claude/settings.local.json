@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m pytest tests/ -v)",
+      "Bash(ls -la \"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\bumby\\\\.openclaw\\\\workspace\\\\driftwatch-skill\")",
+      "Bash(wsl python3:*)",
+      "Bash(wsl bash:*)"
+    ]
+  }
+}
