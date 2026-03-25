@@ -89,7 +89,7 @@ When presenting trends: "AGENTS.md has been growing at about 150 chars per day o
 python3 {baseDir}/scripts/scan.py --visual
 ```
 
-Outputs a color-coded terminal bar chart showing every bootstrap file's budget consumption. Green = healthy, yellow = approaching, red = at risk, blinking red = actively truncated. Useful for quick visual checks or screenshots to share with teammates.
+Outputs a color-coded terminal bar chart showing every bootstrap file's budget consumption. Green = healthy, yellow = approaching, red = at risk or actively truncated. Useful for quick visual checks or screenshots to share with teammates.
 
 ANSI codes are automatically stripped when output is piped to a file.
 

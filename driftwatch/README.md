@@ -46,7 +46,7 @@ Once installed, just say to your agent:
 
 > "scan my config"
 
-Also works: "check my bootstrap files", "am I truncated", "workspace health check", "check for truncation".
+Also works: "check my bootstrap files", "analyze my workspace", "am I truncated", "workspace health check", "check for truncation".
 
 Your agent runs the scanner and summarizes findings. Critical issues first, then warnings, then informational notes.
 
@@ -57,24 +57,24 @@ Your agent runs the scanner and summarizes findings. Critical issues first, then
 The `--visual` flag outputs a color-coded terminal bar chart of every bootstrap file's character budget:
 
 ```
-Bootstrap File Budget (27,855 / 150,000 chars = 18.6%)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Bootstrap File Budget (27,795 / 150,000 chars = 18.5%)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-AGENTS.md     ████████░░░░░░░░░░░░  6,325 / 20,000 (31.6%)  ok
-SOUL.md       ████░░░░░░░░░░░░░░░░  3,912 / 20,000 (19.6%)  ok
-TOOLS.md      ██░░░░░░░░░░░░░░░░░░  2,100 / 20,000 (10.5%)  ok
-IDENTITY.md   ░░░░░░░░░░░░░░░░░░░░    512 / 20,000  (2.6%)  ok
-USER.md       ████░░░░░░░░░░░░░░░░  3,700 / 20,000 (18.5%)  ok
-HEARTBEAT.md  ██░░░░░░░░░░░░░░░░░░  2,100 / 20,000 (10.5%)  ok
-BOOTSTRAP.md  ██░░░░░░░░░░░░░░░░░░  1,900 / 20,000  (9.5%)  ok
-MEMORY.md     ███████░░░░░░░░░░░░░  7,306 / 20,000 (36.5%)  ok
-─────────────────────────────────────────────────────
-Aggregate     ████░░░░░░░░░░░░░░░░ 27,855 / 150,000 (18.6%) ok
+AGENTS.md     ██████░░░░░░░░░░░░░░   6,325 / 20,000 ( 31.6%)
+SOUL.md       ████░░░░░░░░░░░░░░░░   3,912 / 20,000 ( 19.6%)
+TOOLS.md      ███░░░░░░░░░░░░░░░░░   2,686 / 20,000 ( 13.4%)
+IDENTITY.md   ░░░░░░░░░░░░░░░░░░░░      14 / 20,000 (  0.1%)
+USER.md       ██░░░░░░░░░░░░░░░░░░   2,188 / 20,000 ( 10.9%)
+HEARTBEAT.md  ████░░░░░░░░░░░░░░░░   4,192 / 20,000 ( 21.0%)
+BOOTSTRAP.md  ███░░░░░░░░░░░░░░░░░   3,053 / 20,000 ( 15.3%)
+MEMORY.md     █████░░░░░░░░░░░░░░░   5,425 / 20,000 ( 27.1%)
+
+Aggregate     ████░░░░░░░░░░░░░░░░  27,795 / 150,000 ( 18.5%)
 ```
 
-Green = healthy. Yellow = approaching limit. Red = at risk. Blinking red = actively truncated.
+Green = healthy. Yellow = approaching limit. Red = at risk or actively truncated.
 
-Run with `--visual` for terminal output. Use `--html /path/report.html` for a shareable, interactive HTML version with sparklines when trend history is available.
+Run with `--visual` for terminal output. Use `--html /path/report.html` for a shareable HTML report with budget bars, simulation details, and trend data when history is available. The HTML report works everywhere — including in-app viewers that don't run JavaScript.
 
 ---
 
