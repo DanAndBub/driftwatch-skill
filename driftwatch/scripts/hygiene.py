@@ -82,8 +82,8 @@ def analyze_hygiene(workspace_path: str) -> dict:
                 "check": "missing_subagent",
                 "severity": "warning",
                 "message": (
-                    f"{filename} is missing — subagents won't function properly "
-                    "without this file"
+                    f"{filename} is missing — this file is injected into all subagent sessions "
+                    "and is required for proper delegation"
                 ),
                 "files": [filename],
             })
@@ -111,6 +111,13 @@ def analyze_hygiene(workspace_path: str) -> dict:
         if entry.lower() in KNOWN_SUBDIRS:
             continue
         extra_md.append(entry)
+
+    # Filter out files already flagged by duplicate_memory
+    duplicate_flagged = set()
+    for f in findings:
+        if f.get("check") == "duplicate_memory":
+            duplicate_flagged.update(f.get("files", []))
+    extra_md = [f for f in extra_md if f not in duplicate_flagged]
 
     if extra_md:
         findings.append({

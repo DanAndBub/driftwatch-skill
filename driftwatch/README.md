@@ -14,7 +14,7 @@ Driftwatch is an OpenClaw skill that checks your workspace for these problems be
 
 **Truncation simulation** — Maps exactly which lines fall inside the truncation danger zone. For files approaching the limit, shows what sections get cut first. For files already over the limit, shows what content your agent *cannot see right now*.
 
-**Compaction anchor health** — Checks whether AGENTS.md contains the two sections referenced by post-compaction recovery protocols (`## Session Startup` and `## Red Lines`). Verifies each is present and within the 3,000-char cap.
+**Compaction anchor health** — Checks whether AGENTS.md contains two recommended anchor sections (`## Session Startup` and `## Red Lines`). These are workspace conventions (not source-enforced) that ensure critical instructions are always present. Verifies each is present and within a 3,000-char budget.
 
 **Hygiene** — Duplicate memory files, empty bootstrap slots, files you think are being loaded but aren't, and missing subagent files.
 
