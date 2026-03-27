@@ -29,15 +29,16 @@ BOOTSTRAP_FILE_ORDER = [
 
 SUBAGENT_FILES = [
     "AGENTS.md",
-    "SOUL.md",
     "TOOLS.md",
-    "IDENTITY.md",
-    "USER.md",
 ]
 
 MEMORY_CANDIDATES = ["MEMORY.md", "memory.md"]
 
-# --- compaction-safeguard.ts / post-compaction-context.ts ---
+# --- workspace convention (not source-enforced) ---
+# These headings are recommended best practices for AGENTS.md.
+# They are NOT referenced by OpenClaw source code. The compaction-safeguard
+# extension handles LLM-based history summarization, not heading re-injection.
+# Checking for their presence is a hygiene convention, not a source requirement.
 COMPACTION_SURVIVING_HEADINGS = ["Session Startup", "Red Lines"]
 COMPACTION_HEADING_CAP_CHARS = 3_000
 MAX_SUMMARY_CONTEXT_CHARS = 2_000
@@ -50,4 +51,4 @@ MAX_OVERFLOW_COMPACTION_ATTEMPTS = 3
 
 # --- Version stamp ---
 OPENCLAW_VERSION_TAG = "2026.03"
-DRIFTWATCH_VERSION = "1.1.0"
+DRIFTWATCH_VERSION = "1.1.1"

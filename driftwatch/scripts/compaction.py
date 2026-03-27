@@ -1,14 +1,15 @@
 """
-Driftwatch — Post-Compaction Anchor Health Check
+Driftwatch — AGENTS.md Anchor Section Health Check
 
-Checks whether AGENTS.md contains the two sections referenced as
-post-compaction recovery anchors: "Session Startup" and "Red Lines".
-These sections are used by OpenClaw's recovery protocols when conversation
-context gets thin after compaction.
+Checks whether AGENTS.md contains recommended anchor sections:
+"Session Startup" and "Red Lines". These are workspace conventions
+that ensure critical instructions are always present in AGENTS.md.
 
-Note: AGENTS.md itself is a bootstrap file — it's re-injected in full every
-turn and is NOT subject to compaction. The anchor sections matter because
-they're referenced in recovery logic, not because the file gets compacted.
+Note: These headings are NOT referenced by OpenClaw source code.
+The compaction-safeguard extension handles LLM-based history
+summarization, not heading re-injection. AGENTS.md is a bootstrap
+file re-injected every turn — these sections matter as best-practice
+conventions for operator workspaces, not as source-enforced anchors.
 """
 
 import sys
@@ -74,13 +75,13 @@ def analyze_compaction(workspace_path: str) -> dict:
                     "char_count": 0,
                     "cap": ANCHOR_CAP_CHARS,
                     "percent_of_cap": 0,
-                    "status": "critical",
+                    "status": "warning",
                 }
                 for h in ANCHOR_HEADINGS
             ],
             "findings": [
                 {
-                    "severity": "critical",
+                    "severity": "warning",
                     "message": (
                         f"AGENTS.md not found — cannot verify "
                         f"'{h}' anchor section exists"
@@ -129,7 +130,7 @@ def analyze_compaction(workspace_path: str) -> dict:
                 "char_count": 0,
                 "cap": ANCHOR_CAP_CHARS,
                 "percent_of_cap": 0,
-                "status": "critical",
+                "status": "warning",
             })
 
     findings = []
@@ -137,10 +138,10 @@ def analyze_compaction(workspace_path: str) -> dict:
     for s in anchor_sections:
         if not s["found"]:
             findings.append({
-                "severity": "critical",
+                "severity": "warning",
                 "message": (
                     f"Missing '## {s['heading']}' section in AGENTS.md — "
-                    f"post-compaction recovery protocols reference this anchor"
+                    f"recommended convention for workspace health"
                 ),
             })
         elif s["status"] == "warning":
@@ -149,7 +150,7 @@ def analyze_compaction(workspace_path: str) -> dict:
                 "message": (
                     f"'{s['heading']}' section is {s['char_count']} chars, "
                     f"exceeding the {ANCHOR_CAP_CHARS}-char cap — "
-                    f"content may be truncated during post-compaction re-injection"
+                    f"consider trimming to keep this section focused"
                 ),
             })
         else:
