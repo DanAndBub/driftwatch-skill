@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
+*.pyo
+*.pyc
 .pytest_cache/
 .claude/
 *.skill

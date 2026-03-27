@@ -37,7 +37,7 @@ Four analysis modules run in sequence:
 
 **truncation** — Measures every bootstrap file's character count against the 20,000-char per-file limit and the 150,000-char aggregate budget. Tracks sequential budget consumption so you can see when MEMORY.md (last in injection order) is getting starved.
 
-**compaction** — Checks whether AGENTS.md contains the two anchor sections used by post-compaction recovery: `## Session Startup` and `## Red Lines`. Verifies each is present and within the 3,000-char cap.
+**compaction** — Checks whether AGENTS.md contains two recommended anchor sections: `## Session Startup` and `## Red Lines`. These are workspace conventions (not source-enforced) that ensure critical instructions are always present. Verifies each is present and within a 3,000-char budget. AGENTS.md is re-injected every turn as a bootstrap file — these sections matter as best-practice conventions, not because OpenClaw source code references them.
 
 **hygiene** — Checks for duplicate memory files, empty bootstrap slots, missing subagent-required files, and stray markdown files the operator may think are being loaded but aren't.
 
