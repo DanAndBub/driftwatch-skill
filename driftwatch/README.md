@@ -202,7 +202,7 @@ The scanner returns structured JSON. Here's the shape (abbreviated):
 }
 ```
 
-Your agent translates this into plain language. You don't read JSON — you read: "AGENTS.md is at 92% of its limit and has content in the danger zone. Your Red Lines anchor section is missing entirely, which means post-compaction recovery protocols can't reference it."
+Your agent translates this into plain language. You don't read JSON — you read: "AGENTS.md is at 92% of its limit and has content in the danger zone. Your Red Lines anchor section is missing entirely, that's a recommended convention for workspace health."
 
 ---
 
