@@ -29,7 +29,10 @@ BOOTSTRAP_FILE_ORDER = [
 
 SUBAGENT_FILES = [
     "AGENTS.md",
+    "SOUL.md",
     "TOOLS.md",
+    "IDENTITY.md",
+    "USER.md",
 ]
 
 MEMORY_CANDIDATES = ["MEMORY.md", "memory.md"]
