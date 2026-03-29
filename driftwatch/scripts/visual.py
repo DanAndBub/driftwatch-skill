@@ -27,6 +27,22 @@ BAR_WIDTH = 20
 FILLED = "█"
 EMPTY = "░"
 
+TYPICAL_THRESHOLDS = {
+    'AGENTS.md': 5000,
+    'SOUL.md': 6000,
+    'TOOLS.md': 3000,
+    'IDENTITY.md': 3000,
+    'USER.md': 4000,
+    'HEARTBEAT.md': 7000,
+    'BOOTSTRAP.md': 8000,
+    'MEMORY.md': 8000,
+}
+GENERIC_TYPICAL = 10000
+
+
+def get_typical_threshold(filename):
+    return TYPICAL_THRESHOLDS.get(filename, GENERIC_TYPICAL)
+
 
 def _color_for_percent(percent):
     """Return ANSI color code based on percentage."""
@@ -126,13 +142,23 @@ def _esc(s):
     )
 
 
-def _html_bar_class(percent):
-    """Return CSS class name for a bar fill based on percentage."""
-    if percent > 100:
+def _html_bar_class(filename, char_count):
+    """Return CSS class name for a bar fill based on filename and char count."""
+    if char_count >= 20000:
+        return "truncated"
+    if char_count >= 18000:
         return "red"
-    elif percent > 80:
+    typical = get_typical_threshold(filename)
+    if char_count > typical:
+        return "yellow"
+    return "green"
+
+
+def _agg_bar_class(total_chars):
+    """Return CSS class name for aggregate bar based on total chars."""
+    if total_chars >= 120000:
         return "red"
-    elif percent > 60:
+    if total_chars > 45000:
         return "yellow"
     return "green"
 
@@ -171,7 +197,6 @@ def render_html(scan_result, output_path):
     trends = scan_result.get("trends", {})
     compaction = scan_result.get("compaction", {})
     hygiene = scan_result.get("hygiene", {})
-    summary = scan_result.get("summary", {})
 
     # --- Pre-render: Meta ---
     meta_html = " &middot; ".join([
@@ -181,15 +206,27 @@ def render_html(scan_result, output_path):
     ])
 
     # --- Pre-render: Summary stats ---
-    agg_pct = aggregate.get("percent_of_aggregate", 0)
+    agg_total = aggregate.get("total_chars", 0)
+    warning_count = 0
+    danger_count = 0
+    truncated_count = 0
+    for f in files:
+        chars = f.get("char_count", 0)
+        typical = get_typical_threshold(f.get("file", ""))
+        if chars >= 20000:
+            truncated_count += 1
+        elif chars >= 18000:
+            danger_count += 1
+        elif chars > typical:
+            warning_count += 1
+
+    bootstrap_cap_pct = round((agg_total / 150000) * 100, 1)
+
     stat_items = [
-        (summary.get("critical", 0), "Critical",
-         "critical" if summary.get("critical", 0) > 0 else "ok"),
-        (summary.get("warning", 0), "Warning",
-         "warning" if summary.get("warning", 0) > 0 else "ok"),
-        (summary.get("info", 0), "Info", "ok"),
-        (agg_pct, "% Budget Used",
-         "critical" if agg_pct > 80 else "warning" if agg_pct > 60 else "ok"),
+        (warning_count, "Warning", "ok"),
+        (danger_count, "Danger", "ok"),
+        (truncated_count, "Truncated", "ok"),
+        (f"{bootstrap_cap_pct}%", "% of Bootstrap Cap", "ok"),
     ]
     summary_html = ""
     for val, label, css_class in stat_items:
@@ -215,8 +252,7 @@ def render_html(scan_result, output_path):
         chars = f.get("char_count", 0)
         limit = f.get("limit", BOOTSTRAP_MAX_CHARS_PER_FILE)
         pct = f.get("percent_of_limit", 0)
-        bar_class = _html_bar_class(pct)
-        bar_width = min(pct, 100)
+        bar_class = _html_bar_class(fname, chars)
 
         # Build detail content for this file
         detail_parts = []
@@ -241,34 +277,132 @@ def render_html(scan_result, output_path):
             )
         detail_inner = "".join(detail_parts) if detail_parts else "No additional details"
 
+        if bar_class == "truncated":
+            # Three-zone truncation overlay
+            head_chars = 14000
+            tail_chars = 4000
+            cut_chars = chars - head_chars - tail_chars
+            head_pct = round(head_chars / chars * 100, 1)
+            cut_pct = round(cut_chars / chars * 100, 1)
+            tail_pct = round(tail_chars / chars * 100, 1)
+
+            line_msg = ""
+            if sim and sim.get("danger_zone"):
+                dz = sim["danger_zone"]
+                line_msg = f'Lines {dz["start_line"]}\u2013{dz["end_line"]} are invisible to your agent right now'
+
+            bar_col_html = (
+                f'<div>'
+                f'<div class="truncation-bar">'
+                f'<div class="trunc-head" style="width:{head_pct}%"><span>HEAD &middot; {head_chars:,}</span></div>'
+                f'<div class="trunc-cut" style="width:{cut_pct}%"><span>&#9986; {cut_chars:,} CUT</span></div>'
+                f'<div class="trunc-tail" style="width:{tail_pct}%"><span>TAIL &middot; {tail_chars:,}</span></div>'
+                f'</div>'
+            )
+            if line_msg:
+                bar_col_html += f'<div style="font-size:10px;color:var(--red);margin-top:3px">{_esc(line_msg)}</div>'
+            bar_col_html += f'</div>'
+
+            stats_html = f'<span style="color:var(--red);font-weight:600">{_fmt_num(chars)} / {_fmt_num(limit)} ({pct:.1f}%) &mdash; TRUNCATED</span>'
+        else:
+            # Normal bar with tick marks
+            typical = get_typical_threshold(fname)
+            typical_pct = round((typical / 20000) * 100, 1)
+            typical_k = f"{typical // 1000}K"
+            bar_width = min(pct, 100)
+
+            bar_col_html = (
+                f'<div>'
+                f'<div class="bar-container">'
+                f'<div class="bar-fill {bar_class}" style="width:{bar_width}%"></div>'
+                f'<div class="tick" style="left:{typical_pct}%"></div>'
+                f'<div class="tick tick-danger" style="left:90%"></div>'
+                f'</div>'
+                f'<div class="tick-labels">'
+                f'<span style="left:{typical_pct}%">{typical_k}</span>'
+                f'<span class="danger-label" style="left:90%">18K</span>'
+                f'</div>'
+                f'</div>'
+            )
+            stats_html = f'{_fmt_num(chars)} / {_fmt_num(limit)} ({pct:.1f}%)'
+
         budget_rows_html += (
             f'<div class="file-row" onclick="this.nextElementSibling.classList.toggle(\'active\')">'
             f'<div class="file-name">{_esc(fname)}</div>'
-            f'<div class="bar-container">'
-            f'<div class="bar-fill {bar_class}" style="width:{bar_width}%"></div>'
-            f'</div>'
-            f'<div class="file-stats">'
-            f'{_fmt_num(chars)} / {_fmt_num(limit)} ({pct:.1f}%)'
-            f'</div>'
+            f'{bar_col_html}'
+            f'<div class="file-stats">{stats_html}</div>'
             f'</div>'
             f'<div class="detail-panel">{detail_inner}</div>'
         )
 
     # Aggregate row
-    agg_total = aggregate.get("total_chars", 0)
     agg_limit = aggregate.get("aggregate_limit", BOOTSTRAP_TOTAL_MAX_CHARS)
-    agg_bar_class = _html_bar_class(agg_pct)
-    agg_bar_width = min(agg_pct, 100)
+    agg_pct = aggregate.get("percent_of_aggregate", 0)
+    agg_bar_class = _agg_bar_class(agg_total)
+
+    if agg_total >= 150000:
+        overflow = agg_total - 150000
+        loaded_pct = round(150000 / agg_total * 100, 1)
+        cut_pct = round(100 - loaded_pct, 1)
+        agg_bar_col_html = (
+            f'<div>'
+            f'<div class="truncation-bar">'
+            f'<div class="trunc-head" style="width:{loaded_pct}%"><span>150,000 loaded</span></div>'
+            f'<div class="trunc-cut" style="width:{cut_pct}%"><span>&#9986; {overflow:,} not loaded</span></div>'
+            f'</div>'
+            f'<div style="font-size:10px;color:var(--text-dim);margin-top:3px">'
+            f'Characters past 150,000 are not injected &mdash; files at the end of injection order are affected first'
+            f'</div>'
+            f'</div>'
+        )
+        agg_stats_html = f'{_fmt_num(agg_total)} / {_fmt_num(agg_limit)} ({agg_pct:.1f}%)'
+    else:
+        agg_bar_width = min(agg_pct, 100)
+        agg_bar_col_html = (
+            f'<div>'
+            f'<div class="bar-container">'
+            f'<div class="bar-fill {agg_bar_class}" style="width:{agg_bar_width}%"></div>'
+            f'<div class="tick" style="left:30%"></div>'
+            f'<div class="tick tick-danger" style="left:80%"></div>'
+            f'</div>'
+            f'<div class="tick-labels">'
+            f'<span style="left:30%">45K</span>'
+            f'<span class="danger-label" style="left:80%">120K</span>'
+            f'</div>'
+            f'</div>'
+        )
+        agg_stats_html = f'{_fmt_num(agg_total)} / {_fmt_num(agg_limit)} ({agg_pct:.1f}%)'
+
+    # Legend
+    legend_html = (
+        f'<div style="display:flex;gap:16px;align-items:center;margin-top:16px;flex-wrap:wrap">'
+        f'<div style="display:flex;align-items:center;gap:4px">'
+        f'<div style="width:12px;height:12px;background:#2ea043;border-radius:2px"></div>'
+        f'<span style="font-size:11px">Healthy</span>'
+        f'</div>'
+        f'<div style="display:flex;align-items:center;gap:4px">'
+        f'<div style="width:12px;height:12px;background:#d29922;border-radius:2px"></div>'
+        f'<span style="font-size:11px">Warning</span>'
+        f'</div>'
+        f'<div style="display:flex;align-items:center;gap:4px">'
+        f'<div style="width:12px;height:12px;background:#f85149;border-radius:2px"></div>'
+        f'<span style="font-size:11px">Danger</span>'
+        f'</div>'
+        f'<div style="display:flex;align-items:center;gap:4px">'
+        f'<div style="width:12px;height:12px;background:repeating-linear-gradient(135deg,#da3633,#da3633 4px,#8b1a18 4px,#8b1a18 8px);border-radius:2px"></div>'
+        f'<span style="font-size:11px">Truncated</span>'
+        f'</div>'
+        f'</div>'
+        f'<div style="font-size:9px;color:#484f58;margin-top:4px">Thresholds based on OpenClaw source limits and community best practices</div>'
+    )
+
     budget_rows_html += (
         f'<div class="file-row" style="margin-top:12px;border-top:2px solid var(--border);padding-top:12px">'
-        f'<div class="file-name" style="font-weight:700">Aggregate</div>'
-        f'<div class="bar-container">'
-        f'<div class="bar-fill {agg_bar_class}" style="width:{agg_bar_width}%"></div>'
+        f'<div class="file-name" style="font-weight:700">All bootstrap files combined</div>'
+        f'{agg_bar_col_html}'
+        f'<div class="file-stats">{agg_stats_html}</div>'
         f'</div>'
-        f'<div class="file-stats">'
-        f'{_fmt_num(agg_total)} / {_fmt_num(agg_limit)} ({agg_pct:.1f}%)'
-        f'</div>'
-        f'</div>'
+        f'{legend_html}'
     )
 
     # --- Pre-render: Simulation ---
@@ -334,8 +468,7 @@ def render_html(scan_result, output_path):
         found = a.get("found", False)
         icon = "&#10003;" if found else "&#10007;"
         if found:
-            cap = a.get("cap", 3000)
-            right = f'{_fmt_num(a.get("char_count", 0))} / {_fmt_num(cap)} chars'
+            right = f'{_fmt_num(a.get("char_count", 0))} chars'
         else:
             right = "Missing!"
         compaction_inner += (
@@ -392,9 +525,6 @@ def render_html(scan_result, output_path):
   }}
   .stat .value {{ font-size: 1.8rem; font-weight: 700; }}
   .stat .label {{ color: var(--text-dim); font-size: 0.8rem; margin-top: 4px; }}
-  .stat.critical .value {{ color: var(--red); }}
-  .stat.warning .value {{ color: var(--yellow); }}
-  .stat.ok .value {{ color: var(--green); }}
   .card {{
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 20px; margin-bottom: 16px;
@@ -416,10 +546,44 @@ def render_html(scan_result, output_path):
     height: 100%; border-radius: 4px;
     position: relative;
   }}
-  .bar-fill.green {{ background: #3fb950; background: linear-gradient(90deg, #238636, #3fb950); }}
-  .bar-fill.yellow {{ background: #d29922; background: linear-gradient(90deg, #9e6a03, #d29922); }}
-  .bar-fill.red {{ background: #f85149; background: linear-gradient(90deg, #da3633, #f85149); }}
+  .bar-fill.green {{ background: #2ea043; }}
+  .bar-fill.yellow {{ background: #d29922; }}
+  .bar-fill.red {{ background: #f85149; }}
   .file-stats {{ font-size: 0.85rem; color: var(--text-dim); text-align: right; }}
+  /* Tick marks on bars */
+  .tick {{
+    position: absolute; top: 0; width: 1.5px; height: 100%;
+    background: rgba(255,255,255,0.5); z-index: 3;
+  }}
+  .tick-danger {{ background: rgba(248,81,73,0.7); }}
+  .tick-labels {{
+    position: relative; height: 12px; margin-top: 1px;
+  }}
+  .tick-labels span {{
+    position: absolute; transform: translateX(-50%);
+    font-size: 9px; color: #8b949e;
+  }}
+  .tick-labels .danger-label {{ color: #f85149; }}
+  /* Truncation overlay bar */
+  .truncation-bar {{
+    height: 22px; background: #1c2028; border-radius: 4px;
+    overflow: hidden; display: flex;
+  }}
+  .trunc-head, .trunc-tail {{
+    background: #484f58; display: flex;
+    align-items: center; justify-content: center;
+  }}
+  .trunc-head span, .trunc-tail span {{
+    font-size: 9px; font-weight: 600; color: rgba(255,255,255,0.85);
+  }}
+  .trunc-cut {{
+    background: repeating-linear-gradient(135deg, #da3633, #da3633 4px, #8b1a18 4px, #8b1a18 8px);
+    display: flex; align-items: center; justify-content: center;
+  }}
+  .trunc-cut span {{
+    font-size: 9px; font-weight: 700; color: #fff;
+    text-shadow: 0 0 4px rgba(0,0,0,0.6);
+  }}
   .detail-panel {{
     display: none; background: rgba(0,0,0,0.2); padding: 12px 16px;
     border-radius: 4px; margin: 8px 0; font-size: 0.85rem;
@@ -457,10 +621,14 @@ def render_html(scan_result, output_path):
 <h1>&#128269; Driftwatch Report</h1>
 <div class="meta">{meta_html}</div>
 <div class="summary">{summary_html}</div>
-<div class="card"><h2>Bootstrap File Budget</h2>{budget_rows_html}</div>
+<div class="card"><h2>Bootstrap file size analysis</h2>{budget_rows_html}</div>
 {simulation_card_html}
 {trends_card_html}
-<div class="card"><h2>Compaction Anchors</h2>{compaction_inner}</div>
+<div class="card">
+<h2>Compaction survival check</h2>
+<p style="font-size:11px;color:#6e7681;margin-bottom:12px">When your agent&#x27;s context is compacted, only these AGENTS.md sections are re-injected intact.</p>
+{compaction_inner}
+</div>
 <div class="card"><h2>Workspace Hygiene</h2>{hygiene_inner}</div>
 <footer>Generated by Driftwatch &mdash; <a href="https://github.com/DanAndBub/driftwatch-skill" style="color:var(--blue)">github.com/DanAndBub/driftwatch-skill</a></footer>
 <script>
