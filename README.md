@@ -1,6 +1,6 @@
 # Driftwatch
 
-You wrote 25,000 characters in AGENTS.md. Your agent can only see 14,000 of them.
+You wrote 25,000 characters in AGENTS.md. Your agent can only see 18,000 of them.
 
 The truncation is invisible. Your agent doesn't know it's working with an incomplete picture of your instructions — and it won't tell you. It just silently misses the rules at the bottom of your file.
 
