@@ -10,9 +10,9 @@ Driftwatch is an OpenClaw skill that checks your workspace for these problems be
 
 ## What It Checks
 
-**Truncation** — Per-file and aggregate character counts against OpenClaw's bootstrap limits. Flags files where content is being cut off.
+**Truncation** — Per-file and aggregate character counts against OpenClaw's bootstrap limits. Flags files where content is being cut off. Warning and danger callouts appear directly under each file's bar in the HTML report.
 
-**Truncation simulation** — Maps exactly which lines fall inside the truncation danger zone. For files approaching the limit, shows what sections get cut first. For files already over the limit, shows what content your agent *cannot see right now*.
+**Danger zone mapping** — For files approaching or exceeding the 20K limit, shows exactly which lines fall inside the truncation zone and what your agent *cannot see right now*.
 
 **Compaction anchor health** — Checks whether AGENTS.md contains two recommended anchor sections (`## Session Startup` and `## Red Lines`). These are workspace conventions (not source-enforced) that ensure critical instructions are always present. Verifies each is present and within a 3,000-char budget.
 
@@ -52,57 +52,27 @@ Your agent runs the scanner and summarizes findings. Critical issues first, then
 
 ---
 
-## Visual Budget Map
+## HTML Report
 
-The `--visual` flag outputs a color-coded terminal bar chart of every bootstrap file's character budget:
+Use `--html /path/report.html` to generate a shareable HTML report. It includes color-coded budget bars for every bootstrap file, inline truncation warnings, compaction health, hygiene findings, and trend data when history is available. The report works everywhere — including in-app viewers that don't run JavaScript.
 
-```
-Bootstrap File Budget (27,795 / 150,000 chars = 18.5%)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-AGENTS.md     ██████░░░░░░░░░░░░░░   6,325 / 20,000 ( 31.6%)
-SOUL.md       ████░░░░░░░░░░░░░░░░   3,912 / 20,000 ( 19.6%)
-TOOLS.md      ███░░░░░░░░░░░░░░░░░   2,686 / 20,000 ( 13.4%)
-IDENTITY.md   ░░░░░░░░░░░░░░░░░░░░      14 / 20,000 (  0.1%)
-USER.md       ██░░░░░░░░░░░░░░░░░░   2,188 / 20,000 ( 10.9%)
-HEARTBEAT.md  ████░░░░░░░░░░░░░░░░   4,192 / 20,000 ( 21.0%)
-BOOTSTRAP.md  ███░░░░░░░░░░░░░░░░░   3,053 / 20,000 ( 15.3%)
-MEMORY.md     █████░░░░░░░░░░░░░░░   5,425 / 20,000 ( 27.1%)
-
-Aggregate     ████░░░░░░░░░░░░░░░░  27,795 / 150,000 ( 18.5%)
-```
-
-Green = healthy. Yellow = approaching limit. Red = at risk or actively truncated.
-
-Run with `--visual` for terminal output. Use `--html /path/report.html` for a shareable HTML report with budget bars, simulation details, and trend data when history is available. The HTML report works everywhere — including in-app viewers that don't run JavaScript.
+Green = healthy. Amber = larger than typical. Red = approaching truncation. Files over 20K show a three-zone truncation view (HEAD 14K | cut content | TAIL 4K).
 
 ---
 
-## Truncation Simulation
+## Inline Truncation Warnings
 
-OpenClaw truncates large bootstrap files by keeping the first 14,000 characters (head) and last 4,000 characters (tail). Everything in between is silently cut.
+The HTML report shows contextual warnings directly under each file's progress bar:
 
-The simulation module maps this cut zone for every file:
-
-- **Under 18,000 chars:** No danger zone — the file fits entirely within head + tail boundaries.
-- **18,001–20,000 chars:** Danger zone identified. Shows which sections would be cut first if the file grows any more.
-- **Over 20,000 chars:** Actively truncated. Shows exactly which lines and sections your agent cannot see *right now*.
-
-Example finding: "AGENTS.md has 1,200 characters in the danger zone between lines 350–380. The `## Delegation Templates` section falls inside this zone — it would be the first content your agent loses if this file grows past 20,000 chars."
+- **Warning (amber bar):** "Larger than typical — review for unnecessary content"
+- **Danger (red bar, 18K–20K):** "Approaching truncation — trim now to avoid data loss"
+- **Truncated (≥20K):** The bar transforms into a three-zone view showing HEAD 14K | ✂ cut chars | TAIL 4K, with "Lines X–Y are invisible to your agent right now"
 
 ---
 
 ## Drift Tracking
 
-Save scan results over time to track how fast your files are growing:
-
-```bash
-# Save a baseline
-python3 scripts/scan.py --save
-
-# One week later — see how things changed
-python3 scripts/scan.py --save --history
-```
+Every scan automatically records results so you can see how fast your files are growing over time. Run `--history` to surface trends:
 
 The `--history` flag adds a `trends` section to the output:
 
@@ -145,7 +115,7 @@ Exit codes:
 
 One-line stdout output:
 ```
-✓ All clear — 8 files healthy, 18.6% aggregate budget used
+✓ All clear — 8 files healthy, 19% aggregate budget used
 ⚠ Warning — AGENTS.md at 82% of limit
 ✗ Critical — MEMORY.md TRUNCATED
 ```
@@ -171,11 +141,11 @@ The scanner returns structured JSON. Here's the shape (abbreviated):
         "file": "AGENTS.md",
         "char_count": 18500,
         "limit": 20000,
-        "percent_of_limit": 92.5,
+        "percent_of_limit": 93,
         "status": "warning"
       }
     ],
-    "aggregate": { "percent_of_aggregate": 36.0, "aggregate_status": "ok" }
+    "aggregate": { "percent_of_aggregate": 36, "aggregate_status": "ok" }
   },
   "compaction": {
     "anchor_sections": [
@@ -202,7 +172,7 @@ The scanner returns structured JSON. Here's the shape (abbreviated):
 }
 ```
 
-Your agent translates this into plain language. You don't read JSON — you read: "AGENTS.md is at 92% of its limit and has content in the danger zone. Your Red Lines anchor section is missing entirely, that's a recommended convention for workspace health."
+Your agent translates this into plain language. You don't read JSON — you read: "AGENTS.md is at 93% of its limit and has content in the danger zone. Your Red Lines anchor section is missing entirely, that's a recommended convention for workspace health."
 
 ---
 
@@ -210,7 +180,7 @@ Your agent translates this into plain language. You don't read JSON — you read
 
 **This skill makes zero network calls.**
 
-The scanner uses only Python standard library: `os`, `json`, `argparse`, `re`, `datetime`. Nothing touches a network socket.
+The scanner uses only Python standard library: `os`, `json`, `argparse`, `re`, `datetime`. No network requests, no external services, no data leaves your machine.
 
 Verify yourself:
 
@@ -224,14 +194,14 @@ That command should return nothing.
 
 | File | Why |
 |------|-----|
-| `AGENTS.md` | Truncation risk, anchor section health, danger zone simulation |
-| `SOUL.md` | Truncation risk, danger zone simulation |
+| `AGENTS.md` | Truncation risk, compaction anchor health |
+| `SOUL.md` | Truncation risk |
 | `TOOLS.md` | Truncation risk |
 | `IDENTITY.md` | Truncation risk |
 | `USER.md` | Truncation risk |
 | `HEARTBEAT.md` | Truncation risk |
 | `BOOTSTRAP.md` | Truncation risk |
-| `MEMORY.md` | Truncation risk, duplicate detection |
+| `MEMORY.md` | Truncation risk, checks for duplicate memory files (MEMORY.md vs memory.md) |
 
 History data (`~/.driftwatch/`) is stored locally and never transmitted.
 
