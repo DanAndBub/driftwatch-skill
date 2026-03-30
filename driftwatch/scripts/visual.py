@@ -111,7 +111,7 @@ def render_terminal(scan_result, use_color=None):
         reset = _RESET if use_color else ""
 
         bar = _bar(percent)
-        stats = f"{chars:>6,} / {limit:>6,} ({percent:>5.1f}%)"
+        stats = f"{chars:>6,} / {limit:>6,} ({percent:>3.0f}%)"
         line = f"{name:<{max_name}}  {color}{bar}{reset}  {stats}"
         lines.append(line)
 
@@ -120,7 +120,7 @@ def render_terminal(scan_result, use_color=None):
     agg_color = _color_for_percent(agg_percent) if use_color else ""
     agg_reset = _RESET if use_color else ""
     agg_bar = _bar(agg_percent)
-    agg_stats = f"{total_chars:>6,} / {agg_limit:>6,} ({agg_percent:>5.1f}%)"
+    agg_stats = f"{total_chars:>6,} / {agg_limit:>6,} ({agg_percent:>3.0f}%)"
     lines.append(f"{'Aggregate':<{max_name}}  {agg_color}{agg_bar}{agg_reset}  {agg_stats}")
     lines.append("")
 
@@ -220,13 +220,13 @@ def render_html(scan_result, output_path):
         elif chars > typical:
             warning_count += 1
 
-    bootstrap_cap_pct = round((agg_total / 150000) * 100, 1)
+    bootstrap_cap_pct = round((agg_total / 150000) * 100)
 
     stat_items = [
         (warning_count, "Warning", "ok"),
         (danger_count, "Danger", "ok"),
         (truncated_count, "Truncated", "ok"),
-        (f"{bootstrap_cap_pct}%", "% of Bootstrap Cap", "ok"),
+        (f"{bootstrap_cap_pct}%", "Bootstrap Budget", "ok"),
     ]
     summary_html = ""
     for val, label, css_class in stat_items:
@@ -282,9 +282,10 @@ def render_html(scan_result, output_path):
             head_chars = 14000
             tail_chars = 4000
             cut_chars = chars - head_chars - tail_chars
-            head_pct = round(head_chars / chars * 100, 1)
-            cut_pct = round(cut_chars / chars * 100, 1)
-            tail_pct = round(tail_chars / chars * 100, 1)
+            # Fixed layout so all truncated bars look uniform
+            head_pct = 25
+            cut_pct = 55
+            tail_pct = 20
 
             line_msg = ""
             if sim and sim.get("danger_zone"):
@@ -294,16 +295,16 @@ def render_html(scan_result, output_path):
             bar_col_html = (
                 f'<div>'
                 f'<div class="truncation-bar">'
-                f'<div class="trunc-head" style="width:{head_pct}%"><span>HEAD &middot; {head_chars:,}</span></div>'
+                f'<div class="trunc-head" style="width:{head_pct}%"><span>HEAD 14K</span></div>'
                 f'<div class="trunc-cut" style="width:{cut_pct}%"><span>&#9986; {cut_chars:,} CUT</span></div>'
-                f'<div class="trunc-tail" style="width:{tail_pct}%"><span>TAIL &middot; {tail_chars:,}</span></div>'
+                f'<div class="trunc-tail" style="width:{tail_pct}%"><span>TAIL 4K</span></div>'
                 f'</div>'
             )
             if line_msg:
                 bar_col_html += f'<div style="font-size:10px;color:var(--red);margin-top:3px">{_esc(line_msg)}</div>'
             bar_col_html += f'</div>'
 
-            stats_html = f'<span style="color:var(--red);font-weight:600">{_fmt_num(chars)} / {_fmt_num(limit)} ({pct:.1f}%) &mdash; TRUNCATED</span>'
+            stats_html = f'<span style="color:var(--red);font-weight:600">{_fmt_num(chars)} / 20K ({pct:.0f}%)</span>'
         else:
             # Normal bar with tick marks
             typical = get_typical_threshold(fname)
@@ -311,26 +312,36 @@ def render_html(scan_result, output_path):
             typical_k = f"{typical // 1000}K"
             bar_width = min(pct, 100)
 
+            # Callout text for warning and danger states
+            callout_html = ""
+            if bar_class == "red":
+                callout_html = '<div style="font-size:10px;color:var(--red);margin-top:3px">Approaching truncation \u2014 trim now to avoid data loss</div>'
+            elif bar_class == "yellow":
+                callout_html = '<div style="font-size:10px;color:var(--yellow);margin-top:3px">Larger than typical \u2014 review for unnecessary content</div>'
+
             bar_col_html = (
                 f'<div>'
                 f'<div class="bar-container">'
                 f'<div class="bar-fill {bar_class}" style="width:{bar_width}%"></div>'
                 f'<div class="tick" style="left:{typical_pct}%"></div>'
-                f'<div class="tick tick-danger" style="left:90%"></div>'
+                f'<div class="tick" style="left:90%"></div>'
                 f'</div>'
                 f'<div class="tick-labels">'
                 f'<span style="left:{typical_pct}%">{typical_k}</span>'
                 f'<span class="danger-label" style="left:90%">18K</span>'
                 f'</div>'
+                f'{callout_html}'
                 f'</div>'
             )
-            stats_html = f'{_fmt_num(chars)} / {_fmt_num(limit)} ({pct:.1f}%)'
+            stats_html = f'{_fmt_num(chars)} / 20K ({pct:.0f}%)'
 
         budget_rows_html += (
             f'<div class="file-row" onclick="this.nextElementSibling.classList.toggle(\'active\')">'
+            f'<div class="file-header">'
             f'<div class="file-name">{_esc(fname)}</div>'
-            f'{bar_col_html}'
             f'<div class="file-stats">{stats_html}</div>'
+            f'</div>'
+            f'{bar_col_html}'
             f'</div>'
             f'<div class="detail-panel">{detail_inner}</div>'
         )
@@ -355,7 +366,7 @@ def render_html(scan_result, output_path):
             f'</div>'
             f'</div>'
         )
-        agg_stats_html = f'{_fmt_num(agg_total)} / {_fmt_num(agg_limit)} ({agg_pct:.1f}%)'
+        agg_stats_html = f'{_fmt_num(agg_total)} / 150K ({agg_pct:.0f}%)'
     else:
         agg_bar_width = min(agg_pct, 100)
         agg_bar_col_html = (
@@ -363,7 +374,7 @@ def render_html(scan_result, output_path):
             f'<div class="bar-container">'
             f'<div class="bar-fill {agg_bar_class}" style="width:{agg_bar_width}%"></div>'
             f'<div class="tick" style="left:30%"></div>'
-            f'<div class="tick tick-danger" style="left:80%"></div>'
+            f'<div class="tick" style="left:80%"></div>'
             f'</div>'
             f'<div class="tick-labels">'
             f'<span style="left:30%">45K</span>'
@@ -371,7 +382,7 @@ def render_html(scan_result, output_path):
             f'</div>'
             f'</div>'
         )
-        agg_stats_html = f'{_fmt_num(agg_total)} / {_fmt_num(agg_limit)} ({agg_pct:.1f}%)'
+        agg_stats_html = f'{_fmt_num(agg_total)} / 150K ({agg_pct:.0f}%)'
 
     # Legend
     legend_html = (
@@ -398,31 +409,18 @@ def render_html(scan_result, output_path):
 
     budget_rows_html += (
         f'<div class="file-row" style="margin-top:12px;border-top:2px solid var(--border);padding-top:12px">'
-        f'<div class="file-name" style="font-weight:700">All bootstrap files combined</div>'
-        f'{agg_bar_col_html}'
+        f'<div class="file-header">'
+        f'<div class="file-name" style="font-weight:700">All Bootstrap Files</div>'
         f'<div class="file-stats">{agg_stats_html}</div>'
+        f'</div>'
+        f'{agg_bar_col_html}'
         f'</div>'
         f'{legend_html}'
     )
 
-    # --- Pre-render: Simulation ---
-    sim_files = [sf for sf in simulation.get("files", []) if sf.get("simulation_needed")]
-    if sim_files:
-        sim_inner = ""
-        for sf in sim_files:
-            sev = "critical" if sf.get("status") == "truncated_now" else "warning"
-            label = "TRUNCATED" if sf.get("status") == "truncated_now" else "AT RISK"
-            sim_inner += (
-                f'<div class="finding">'
-                f'<span class="severity {sev}">{label}</span> '
-                f'{_esc(sf.get("file", ""))}: {_esc(sf.get("recommendation", ""))}'
-                f'</div>'
-            )
-        simulation_card_html = (
-            f'<div class="card"><h2>Truncation Simulation</h2>{sim_inner}</div>'
-        )
-    else:
-        simulation_card_html = ""
+    # Simulation data is now shown inline on per-file bars (callouts + truncation overlay).
+    # No standalone card needed.
+    simulation_card_html = ""
 
     # --- Pre-render: Trends ---
     trend_files = trends.get("files", [])
@@ -531,12 +529,15 @@ def render_html(scan_result, output_path):
   }}
   .card h2 {{ font-size: 1.1rem; margin-bottom: 16px; }}
   .file-row {{
-    display: grid; grid-template-columns: 140px 1fr 160px;
-    align-items: center; gap: 12px; padding: 8px 0;
+    padding: 8px 0;
     border-bottom: 1px solid var(--border);
   }}
   .file-row:last-child {{ border-bottom: none; }}
   .file-row:hover {{ background: rgba(255,255,255,0.03); }}
+  .file-header {{
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px;
+  }}
   .file-name {{ font-weight: 600; font-size: 0.9rem; }}
   .bar-container {{
     height: 20px; background: var(--border); border-radius: 4px;
@@ -621,7 +622,7 @@ def render_html(scan_result, output_path):
 <h1>&#128269; Driftwatch Report</h1>
 <div class="meta">{meta_html}</div>
 <div class="summary">{summary_html}</div>
-<div class="card"><h2>Bootstrap file size analysis</h2>{budget_rows_html}</div>
+<div class="card"><h2>Bootstrap File Size Analysis</h2>{budget_rows_html}</div>
 {simulation_card_html}
 {trends_card_html}
 <div class="card">
